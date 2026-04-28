@@ -1,13 +1,19 @@
 import { expect, test } from "@playwright/test";
 
-test("loads the kanban board", async ({ page }) => {
+test.beforeEach(async ({ page }) => {
   await page.goto("/");
+  await page.getByLabel("Username").fill("user");
+  await page.getByLabel("Password").fill("password");
+  await page.getByRole("button", { name: /sign in/i }).click();
+  await page.waitForSelector('[data-testid^="column-"]', { timeout: 10_000 });
+});
+
+test("loads the kanban board", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Kanban Studio" })).toBeVisible();
   await expect(page.locator('[data-testid^="column-"]')).toHaveCount(5);
 });
 
 test("adds a card to a column", async ({ page }) => {
-  await page.goto("/");
   const firstColumn = page.locator('[data-testid^="column-"]').first();
   await firstColumn.getByRole("button", { name: /add a card/i }).click();
   await firstColumn.getByPlaceholder("Card title").fill("Playwright card");
@@ -17,9 +23,9 @@ test("adds a card to a column", async ({ page }) => {
 });
 
 test("moves a card between columns", async ({ page }) => {
-  await page.goto("/");
   const card = page.getByTestId("card-card-1");
-  const targetColumn = page.getByTestId("column-col-review");
+  // Review is the 4th column (0-indexed: Backlog=0, Discovery=1, In Progress=2, Review=3)
+  const targetColumn = page.locator('[data-testid^="column-"]').nth(3);
   const cardBox = await card.boundingBox();
   const columnBox = await targetColumn.boundingBox();
   if (!cardBox || !columnBox) {

@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "dialect": "sqlite",
+  "tables": [
+    {
+      "name": "users",
+      "description": "Application users. For the MVP, this will contain a single demo user, but the schema supports multiple users.",
+      "columns": [
+        { "name": "id", "type": "integer", "primaryKey": true, "autoincrement": true },
+        { "name": "username", "type": "text", "notNull": true, "unique": true },
+        {
+          "name": "password_hash",
+          "type": "text",
+          "notNull": true,
+          "description": "Future-facing field for storing password hashes. For the MVP we may store a placeholder value."
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_users_username",
+          "unique": true,
+          "columns": ["username"]
+        }
+      ]
+    },
+    {
+      "name": "boards",
+      "description": "Top-level kanban boards. For the MVP there is one board per user, enforced via a unique constraint.",
+      "columns": [
+        { "name": "id", "type": "integer", "primaryKey": true, "autoincrement": true },
+        { "name": "user_id", "type": "integer", "notNull": true, "references": { "table": "users", "column": "id", "onDelete": "CASCADE" } },
+        { "name": "name", "type": "text", "notNull": true },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_boards_user_unique",
+          "unique": true,
+          "columns": ["user_id"]
+        }
+      ]
+    },
+    {
+      "name": "columns",
+      "description": "Columns within a board (e.g. Backlog, In Progress, Done).",
+      "columns": [
+        { "name": "id", "type": "integer", "primaryKey": true, "autoincrement": true },
+        { "name": "board_id", "type": "integer", "notNull": true, "references": { "table": "boards", "column": "id", "onDelete": "CASCADE" } },
+        { "name": "title", "type": "text", "notNull": true },
+        {
+          "name": "position",
+          "type": "integer",
+          "notNull": true,
+          "description": "Ordering of columns within a board (0-based or 1-based; exact convention is an implementation detail)."
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_columns_board_position",
+          "unique": false,
+          "columns": ["board_id", "position"]
+        }
+      ]
+    },
+    {
+      "name": "cards",
+      "description": "Cards that live inside columns on a board.",
+      "columns": [
+        { "name": "id", "type": "integer", "primaryKey": true, "autoincrement": true },
+        { "name": "column_id", "type": "integer", "notNull": true, "references": { "table": "columns", "column": "id", "onDelete": "CASCADE" } },
+        { "name": "title", "type": "text", "notNull": true },
+        { "name": "details", "type": "text", "notNull": false },
+        {
+          "name": "position",
+          "type": "integer",
+          "notNull": true,
+          "description": "Ordering of cards inside a column."
+        },
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_cards_column_position",
+          "unique": false,
+          "columns": ["column_id", "position"]
+        }
+      ]
+    }
+  ]
+}
+
