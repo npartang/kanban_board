@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -16,6 +16,7 @@ import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
 import { AISidebar } from "@/components/AISidebar";
 import { moveCard, type BoardData } from "@/lib/kanban";
+import { useAuth } from "@/lib/auth-context";
 
 type ApiColumn = {
   id: number;
@@ -41,13 +42,14 @@ type ApiBoard = {
 const toColumnId = (dbId: number) => `col-${dbId}`;
 const toCardId = (dbId: number) => `card-${dbId}`;
 
-const fromColumnId = (id: string) => {
-  return Number(id.replace(/^col-/, ""));
-};
+const fromColumnId = (id: string) => Number(id.replace(/^col-/, ""));
+const fromCardId = (id: string) => Number(id.replace(/^card-/, ""));
 
-const fromCardId = (id: string) => {
-  return Number(id.replace(/^card-/, ""));
-};
+const isApiBoard = (data: unknown): data is ApiBoard =>
+  typeof data === "object" &&
+  data !== null &&
+  Array.isArray((data as ApiBoard).columns) &&
+  Array.isArray((data as ApiBoard).cards);
 
 const toBoardData = (apiBoard: ApiBoard): BoardData => {
   const sortedColumns = [...apiBoard.columns].sort(
@@ -86,38 +88,48 @@ const toBoardData = (apiBoard: ApiBoard): BoardData => {
 };
 
 export const KanbanBoard = () => {
+  const { onUnauthenticated } = useAuth();
+
   const [board, setBoard] = useState<BoardData | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
+
+  // Per-column debounce timers for rename API calls
+  const renameTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
   const loadBoard = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await fetch("/api/board", {
-        credentials: "include",
-      });
-      if (!response.ok) {
-        throw new Error("Failed to load board");
+      const response = await fetch("/api/board", { credentials: "include" });
+      if (response.status === 401) {
+        onUnauthenticated();
+        return;
       }
-      const data = (await response.json()) as ApiBoard;
-      setBoard(toBoardData(data));
+      if (!response.ok) {
+        throw new Error(`Board load failed: ${response.status}`);
+      }
+      const json: unknown = await response.json().catch(() => null);
+      if (!isApiBoard(json)) {
+        throw new Error("Unexpected board response shape");
+      }
+      setBoard(toBoardData(json));
       setError(null);
-    } catch {
+    } catch (err) {
+      console.error("Failed to load board:", err);
       setError("Unable to load board.");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [onUnauthenticated]);
 
   useEffect(() => {
     void loadBoard();
   }, [loadBoard]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 6 },
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
   const cardsById = useMemo(() => board?.cards ?? {}, [board]);
@@ -129,10 +141,7 @@ export const KanbanBoard = () => {
   const handleDragOver = (event: DragOverEvent) => {
     if (!board) return;
     const { over } = event;
-    if (!over) {
-      setOverColumnId(null);
-      return;
-    }
+    if (!over) { setOverColumnId(null); return; }
     const overId = String(over.id);
     const column =
       board.columns.find((c) => c.id === overId) ??
@@ -142,68 +151,58 @@ export const KanbanBoard = () => {
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (!board) return;
-
     const { active, over } = event;
     setActiveCardId(null);
     setOverColumnId(null);
-
-    if (!over || active.id === over.id) {
-      return;
-    }
+    if (!over || active.id === over.id) return;
 
     const movedCardId = active.id as string;
     const nextColumns = moveCard(board.columns, movedCardId, over.id as string);
+    setBoard((prev) => prev ? { ...prev, columns: nextColumns } : prev);
 
-    setBoard((prev) =>
-      prev ? { ...prev, columns: nextColumns } : prev
-    );
-
-    const targetColumn = nextColumns.find((column) =>
-      column.cardIds.includes(movedCardId)
-    );
-    if (!targetColumn) {
-      return;
-    }
+    const targetColumn = nextColumns.find((c) => c.cardIds.includes(movedCardId));
+    if (!targetColumn) return;
 
     const position = targetColumn.cardIds.indexOf(movedCardId);
-    const cardDbId = fromCardId(movedCardId);
-    const targetColumnDbId = fromColumnId(targetColumn.id);
-
-    void fetch(`/api/cards/${cardDbId}/move`, {
+    void fetch(`/api/cards/${fromCardId(movedCardId)}/move`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({
-        target_column_id: targetColumnDbId,
-        position,
-      }),
-    }).catch(() => {
-      // For the MVP we do not roll back on failure; errors can be inspected in the console.
+      body: JSON.stringify({ target_column_id: fromColumnId(targetColumn.id), position }),
+    }).then((r) => {
+      if (r.status === 401) onUnauthenticated();
+    }).catch((err) => {
+      console.error("Failed to persist card move:", err);
     });
   };
 
   const handleRenameColumn = (columnId: string, title: string) => {
+    // Optimistic local update
     setBoard((prev) =>
       prev
-        ? {
-            ...prev,
-            columns: prev.columns.map((column) =>
-              column.id === columnId ? { ...column, title } : column
-            ),
-          }
+        ? { ...prev, columns: prev.columns.map((c) => c.id === columnId ? { ...c, title } : c) }
         : prev
     );
 
-    const columnDbId = fromColumnId(columnId);
-
-    void fetch(`/api/columns/${columnDbId}/rename`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ title }),
-    }).catch(() => {
-      // Silent failure for the MVP.
-    });
+    // Debounced API call: only fires 400 ms after the user stops typing
+    const existing = renameTimers.current.get(columnId);
+    if (existing) clearTimeout(existing);
+    renameTimers.current.set(
+      columnId,
+      setTimeout(() => {
+        renameTimers.current.delete(columnId);
+        void fetch(`/api/columns/${fromColumnId(columnId)}/rename`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ title }),
+        }).then((r) => {
+          if (r.status === 401) onUnauthenticated();
+        }).catch((err) => {
+          console.error("Failed to persist column rename:", err);
+        });
+      }, 400)
+    );
   };
 
   const handleAddCard = (columnId: string, title: string, details: string) => {
@@ -213,46 +212,39 @@ export const KanbanBoard = () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({
-            column_id: fromColumnId(columnId),
-            title,
-            details,
-          }),
+          body: JSON.stringify({ column_id: fromColumnId(columnId), title, details }),
         });
-        if (!response.ok) {
-          throw new Error("Failed to create card");
-        }
-        const card = (await response.json()) as {
-          id: number;
-          column_id: number;
-          title: string;
-          details: string | null;
-          position: number;
-        };
-        const cardId = toCardId(card.id);
+        if (response.status === 401) { onUnauthenticated(); return; }
+        if (!response.ok) throw new Error(`Create card failed: ${response.status}`);
 
+        const json: unknown = await response.json().catch(() => null);
+        if (
+          !json ||
+          typeof json !== "object" ||
+          typeof (json as { id?: unknown }).id !== "number"
+        ) {
+          throw new Error("Unexpected create-card response shape");
+        }
+        const card = json as { id: number; column_id: number; title: string; details: string | null; position: number };
+        const cardId = toCardId(card.id);
         setBoard((prev) =>
           prev
             ? {
                 ...prev,
                 cards: {
                   ...prev.cards,
-                  [cardId]: {
-                    id: cardId,
-                    title: card.title,
-                    details: card.details ?? "No details yet.",
-                  },
+                  [cardId]: { id: cardId, title: card.title, details: card.details ?? "No details yet." },
                 },
-                columns: prev.columns.map((column) =>
-                  fromColumnId(column.id) === card.column_id
-                    ? { ...column, cardIds: [...column.cardIds, cardId] }
-                    : column
+                columns: prev.columns.map((c) =>
+                  fromColumnId(c.id) === card.column_id
+                    ? { ...c, cardIds: [...c.cardIds, cardId] }
+                    : c
                 ),
               }
             : prev
         );
-      } catch {
-        // Silent failure for the MVP.
+      } catch (err) {
+        console.error("Failed to add card:", err);
       }
     })();
   };
@@ -260,30 +252,23 @@ export const KanbanBoard = () => {
   const handleDeleteCard = (columnId: string, cardId: string) => {
     setBoard((prev) => {
       if (!prev) return prev;
-      const nextCards = Object.fromEntries(
-        Object.entries(prev.cards).filter(([id]) => id !== cardId)
-      );
+      const nextCards = Object.fromEntries(Object.entries(prev.cards).filter(([id]) => id !== cardId));
       return {
         ...prev,
         cards: nextCards,
-        columns: prev.columns.map((column) =>
-          column.id === columnId
-            ? {
-                ...column,
-                cardIds: column.cardIds.filter((id) => id !== cardId),
-              }
-            : column
+        columns: prev.columns.map((c) =>
+          c.id === columnId ? { ...c, cardIds: c.cardIds.filter((id) => id !== cardId) } : c
         ),
       };
     });
 
-    const cardDbId = fromCardId(cardId);
-
-    void fetch(`/api/cards/${cardDbId}`, {
+    void fetch(`/api/cards/${fromCardId(cardId)}`, {
       method: "DELETE",
       credentials: "include",
-    }).catch(() => {
-      // Silent failure for the MVP.
+    }).then((r) => {
+      if (r.status === 401) onUnauthenticated();
+    }).catch((err) => {
+      console.error("Failed to delete card:", err);
     });
   };
 
@@ -375,11 +360,7 @@ export const KanbanBoard = () => {
                 ) : null}
               </DragOverlay>
             </DndContext>
-            <AISidebar
-              onBoardUpdated={() => {
-                void loadBoard();
-              }}
-            />
+            <AISidebar onBoardUpdated={() => void loadBoard()} />
           </div>
         )}
       </main>

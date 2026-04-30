@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, ReactNode, useEffect, useState } from "react";
+import { AuthContext } from "@/lib/auth-context";
 
 type LoginGateProps = {
   children: ReactNode;
@@ -155,6 +156,7 @@ export const LoginGate = ({ children }: LoginGateProps) => {
   }
 
   return (
+    <AuthContext.Provider value={{ onUnauthenticated: handleLogout }}>
     <div className="min-h-screen bg-[var(--surface)]">
       <header className="border-b border-[var(--stroke)] bg-white/80 px-6 py-3 shadow-[0_10px_20px_rgba(3,33,71,0.04)] backdrop-blur">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4">
@@ -180,6 +182,7 @@ export const LoginGate = ({ children }: LoginGateProps) => {
       </header>
       {children}
     </div>
+    </AuthContext.Provider>
   );
 };
 

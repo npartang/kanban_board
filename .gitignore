@@ -174,3 +174,11 @@ cython_debug/
 
 .DS_Store
 
+# Project-specific generated artifacts
+frontend/out/
+frontend/.next/
+frontend/node_modules/
+backend/app/static/
+backend/app/pm.db
+frontend/test-results/
+frontend/playwright-report/

@@ -112,3 +112,34 @@ def test_move_card_between_columns_updates_column_and_order() -> None:
   target_cards_sorted = sorted(target_cards, key=lambda c: c["position"])
   assert target_cards_sorted[0]["id"] == first["id"]
 
+  # second card should still be in source column and referenced in the loop variable
+  assert any(c["id"] == second["id"] for c in source_cards)
+
+
+def test_move_card_within_same_column_reorders() -> None:
+  login_demo_user()
+  board = client.get("/api/board").json()
+  col_id = board["columns"][0]["id"]
+
+  # Sort existing cards; move the last one to position 0 — unambiguous regardless of seeded data.
+  col_cards_before = sorted(
+    [c for c in board["cards"] if c["column_id"] == col_id],
+    key=lambda c: c["position"],
+  )
+  last_card = col_cards_before[-1]
+  first_card = col_cards_before[0]
+
+  response = client.post(
+    f"/api/cards/{last_card['id']}/move",
+    json={"target_column_id": col_id, "position": 0},
+  )
+  assert response.status_code == 204
+
+  updated = client.get("/api/board").json()
+  col_cards_after = sorted(
+    [c for c in updated["cards"] if c["column_id"] == col_id],
+    key=lambda c: c["position"],
+  )
+  ids_in_order = [c["id"] for c in col_cards_after]
+  assert ids_in_order.index(last_card["id"]) < ids_in_order.index(first_card["id"])
+

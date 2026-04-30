@@ -61,6 +61,14 @@ describe("LoginGate", () => {
     expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
   });
 
+  it("shows protected content immediately when localStorage flag is set", () => {
+    window.localStorage.setItem("pm-auth-logged-in", "true");
+    renderWithChild();
+    // Should not show the login form
+    expect(screen.queryByLabelText(/username/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Protected content")).toBeInTheDocument();
+  });
+
   it("logs out and returns to login screen", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({

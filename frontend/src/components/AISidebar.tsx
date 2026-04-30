@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useAuth } from "@/lib/auth-context";
 
 type AISidebarProps = {
   onBoardUpdated: () => void;
@@ -13,6 +14,8 @@ type ChatMessage = {
 };
 
 export const AISidebar = ({ onBoardUpdated }: AISidebarProps) => {
+  const { onUnauthenticated } = useAuth();
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -23,16 +26,8 @@ export const AISidebar = ({ onBoardUpdated }: AISidebarProps) => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
 
-    const userMessage: ChatMessage = {
-      id: Date.now(),
-      role: "user",
-      content: trimmed,
-    };
-
-    const history = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
+    const userMessage: ChatMessage = { id: Date.now(), role: "user", content: trimmed };
+    const history = messages.map((m) => ({ role: m.role, content: m.content }));
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
@@ -44,27 +39,33 @@ export const AISidebar = ({ onBoardUpdated }: AISidebarProps) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          message: trimmed,
-          history,
-        }),
+        body: JSON.stringify({ message: trimmed, history }),
       });
 
-      if (!response.ok) {
-        throw new Error("AI request failed");
+      if (response.status === 401) {
+        onUnauthenticated();
+        return;
       }
 
-      const data = (await response.json()) as { reply: string };
+      if (!response.ok) {
+        throw new Error(`AI request failed: ${response.status}`);
+      }
+
+      const json: unknown = await response.json().catch(() => null);
+      if (!json || typeof (json as { reply?: unknown }).reply !== "string") {
+        throw new Error("Unexpected AI response shape");
+      }
 
       const assistantMessage: ChatMessage = {
         id: Date.now() + 1,
         role: "assistant",
-        content: data.reply,
+        content: (json as { reply: string }).reply,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
       onBoardUpdated();
-    } catch {
+    } catch (err) {
+      console.error("AI sidebar error:", err);
       setError("Unable to contact AI. Please try again.");
     } finally {
       setIsLoading(false);
@@ -127,4 +128,3 @@ export const AISidebar = ({ onBoardUpdated }: AISidebarProps) => {
     </aside>
   );
 };
-

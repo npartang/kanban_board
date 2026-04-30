@@ -1,4 +1,6 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -7,9 +9,16 @@ from app.auth import router as auth_router
 from app.board_api import router as board_router
 from app.ai import router as ai_router
 from app.ai_kanban import router as ai_kanban_router
+from app.db import ensure_schema
 
 
-app = FastAPI(title="Project Management MVP Backend")
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    ensure_schema()
+    yield
+
+
+app = FastAPI(title="Project Management MVP Backend", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -31,4 +40,3 @@ app.include_router(ai_router)
 app.include_router(ai_kanban_router)
 
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")
-

@@ -74,6 +74,17 @@ describe("KanbanBoard", () => {
     setupFetchMock();
   });
 
+  it("shows an error when the board cannot be loaded", async () => {
+    (globalThis as any).fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    } as Response);
+
+    render(<KanbanBoard />);
+    await screen.findByText(/unable to load board/i);
+  });
+
   it("renders five columns", async () => {
     render(<KanbanBoard />);
     const columns = await screen.findAllByTestId(/column-/i);

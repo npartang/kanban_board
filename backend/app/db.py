@@ -24,8 +24,15 @@ def get_db_path() -> Path:
 def _connect() -> sqlite3.Connection:
   connection = sqlite3.connect(get_db_path())
   connection.row_factory = sqlite3.Row
-  apply_schema(connection)
+  # Foreign-key enforcement is a per-connection pragma; must be set every time.
+  connection.execute("PRAGMA foreign_keys = ON;")
   return connection
+
+
+def ensure_schema() -> None:
+  """Apply DDL once at startup. Idempotent — safe to call multiple times."""
+  with sqlite3.connect(get_db_path()) as conn:
+    apply_schema(conn)
 
 
 @contextmanager

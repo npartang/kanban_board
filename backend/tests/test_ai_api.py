@@ -19,12 +19,16 @@ class FakeResponse:
     return self._payload
 
 
+def login_demo_user() -> None:
+  response = client.post("/api/login", json={"username": "user", "password": "password"})
+  assert response.status_code == 200
+
+
 @pytest.mark.anyio
 async def test_ai_test_returns_message_when_provider_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
-  # Ensure the API key is present
+  login_demo_user()
   monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
 
-  # Patch httpx.AsyncClient to avoid real network calls
   import app.ai as ai_module
 
   class DummyClient:
@@ -32,37 +36,27 @@ async def test_ai_test_returns_message_when_provider_succeeds(monkeypatch: pytes
       pass
     async def __aenter__(self) -> "DummyClient":
       return self
-
     async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
       return None
-
     async def post(self, *args: Any, **kwargs: Any) -> FakeResponse:
-      return FakeResponse(
-        200,
-        {
-          "choices": [
-            {
-              "message": {
-                "content": "4",
-              }
-            }
-          ]
-        },
-      )
+      return FakeResponse(200, {"choices": [{"message": {"content": "4"}}]})
 
   monkeypatch.setattr(ai_module, "httpx", type("H", (), {"AsyncClient": DummyClient}))
 
   response = client.get("/api/ai-test")
   assert response.status_code == 200
-  data = response.json()
-  assert data["message"] == "4"
+  assert response.json()["message"] == "4"
+
+
+def test_ai_test_returns_401_when_not_logged_in() -> None:
+  response = client.get("/api/ai-test")
+  assert response.status_code == 401
 
 
 def test_ai_test_fails_when_api_key_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-  # Ensure key is not set
+  login_demo_user()
   monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
   response = client.get("/api/ai-test")
   assert response.status_code == 500
   assert "OPENROUTER_API_KEY is not configured" in response.text
-

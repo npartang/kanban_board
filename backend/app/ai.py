@@ -4,8 +4,10 @@ import os
 from typing import Any, Dict
 
 import httpx
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+
+from app.auth import get_current_user_id
 
 
 router = APIRouter()
@@ -69,7 +71,7 @@ async def call_openrouter(prompt: str) -> str:
 
 
 @router.get("/api/ai-test", response_model=AIResponse)
-async def ai_test() -> AIResponse:
+async def ai_test(_user_id: int = Depends(get_current_user_id)) -> AIResponse:
   """Simple connectivity test against OpenRouter.
 
   Sends a \"2+2\" style question and returns the model's answer.
