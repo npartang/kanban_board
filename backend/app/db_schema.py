@@ -4,9 +4,18 @@ import sqlite3
 from typing import Iterable
 
 
-# Migration: drop the old unique-per-user constraint so a user can have many boards.
+# Migrations: run before CREATE TABLE statements.
 _MIGRATIONS: Iterable[str] = (
+  # Drop old single-board-per-user constraint (allows multiple boards per user).
   "DROP INDEX IF EXISTS idx_boards_user_unique;",
+)
+
+# Columns added to existing tables in later versions.
+# Each entry: (table, column_name, column_definition).
+_COLUMN_ADDITIONS: tuple[tuple[str, str, str], ...] = (
+  ("cards", "priority", "TEXT NOT NULL DEFAULT 'medium'"),
+  ("cards", "due_date", "TEXT"),
+  ("cards", "labels", "TEXT NOT NULL DEFAULT '[]'"),
 )
 
 SCHEMA_STATEMENTS: Iterable[str] = (
@@ -54,6 +63,8 @@ SCHEMA_STATEMENTS: Iterable[str] = (
     column_id INTEGER NOT NULL,
     title TEXT NOT NULL,
     details TEXT,
+    priority TEXT NOT NULL DEFAULT 'medium',
+    due_date TEXT,
     position INTEGER NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -66,6 +77,8 @@ SCHEMA_STATEMENTS: Iterable[str] = (
   """,
 )
 
+_VALID_PRIORITIES = frozenset({"low", "medium", "high", "urgent"})
+
 
 def apply_schema(connection: sqlite3.Connection) -> None:
   """Apply the SQLite schema. Idempotent — safe to call multiple times."""
@@ -77,3 +90,10 @@ def apply_schema(connection: sqlite3.Connection) -> None:
 
   for statement in SCHEMA_STATEMENTS:
     connection.executescript(statement)
+
+  # Add new columns to existing tables without breaking idempotency.
+  for table, column, definition in _COLUMN_ADDITIONS:
+    existing = {row[1] for row in connection.execute(f"PRAGMA table_info({table});").fetchall()}
+    if column not in existing:
+      connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition};")
+  connection.commit()

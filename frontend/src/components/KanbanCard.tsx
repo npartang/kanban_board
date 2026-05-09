@@ -32,6 +32,8 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
     transition,
   };
 
+  const today = new Date().toISOString().split("T")[0];
+  const isOverdue = !!card.dueDate && card.dueDate < today;
   const formattedDate = card.dueDate
     ? new Date(card.dueDate + "T00:00:00").toLocaleDateString(undefined, {
         month: "short",
@@ -72,8 +74,23 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
               {PRIORITY_LABELS[card.priority]}
             </span>
             {formattedDate && (
-              <span className="text-[11px] text-[var(--gray-text)]">Due {formattedDate}</span>
+              <span
+                className={clsx(
+                  "text-[11px] font-medium",
+                  isOverdue ? "text-red-500" : "text-[var(--gray-text)]"
+                )}
+              >
+                {isOverdue ? "Overdue · " : "Due "}{formattedDate}
+              </span>
             )}
+            {card.labels.map((label) => (
+              <span
+                key={label}
+                className="rounded-full border border-[var(--stroke)] bg-[var(--surface)] px-2 py-0.5 text-[10px] font-semibold text-[var(--navy-dark)]"
+              >
+                {label}
+              </span>
+            ))}
           </div>
         </div>
         <div className="flex shrink-0 flex-col gap-1">

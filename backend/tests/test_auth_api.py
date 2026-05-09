@@ -144,3 +144,62 @@ def test_me_after_logout_returns_401() -> None:
     client.post("/api/logout")
     response = client.get("/api/me")
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Change password
+# ---------------------------------------------------------------------------
+
+def test_change_password_success() -> None:
+    client.post("/api/register", json={"username": "pwduser", "password": "oldpassword1"})
+    response = client.patch(
+        "/api/me/password",
+        json={"current_password": "oldpassword1", "new_password": "newpassword1"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "Password changed"
+
+
+def test_change_password_new_password_too_short() -> None:
+    client.post("/api/register", json={"username": "pwduser2", "password": "oldpassword1"})
+    response = client.patch(
+        "/api/me/password",
+        json={"current_password": "oldpassword1", "new_password": "short"},
+    )
+    assert response.status_code == 422
+
+
+def test_change_password_wrong_current_password() -> None:
+    client.post("/api/register", json={"username": "pwduser3", "password": "oldpassword1"})
+    response = client.patch(
+        "/api/me/password",
+        json={"current_password": "wrongpassword", "new_password": "newpassword1"},
+    )
+    assert response.status_code == 401
+
+
+def test_change_password_requires_auth() -> None:
+    response = client.patch(
+        "/api/me/password",
+        json={"current_password": "x", "new_password": "newpassword1"},
+    )
+    assert response.status_code == 401
+
+
+def test_login_with_new_password_after_change() -> None:
+    client.post("/api/register", json={"username": "pwduser4", "password": "oldpassword1"})
+    client.patch(
+        "/api/me/password",
+        json={"current_password": "oldpassword1", "new_password": "newpassword1"},
+    )
+
+    import app.auth as auth_module
+    auth_module._sessions.clear()
+
+    # Old password fails
+    old_resp = client.post("/api/login", json={"username": "pwduser4", "password": "oldpassword1"})
+    assert old_resp.status_code == 401
+
+    # New password works
+    new_resp = client.post("/api/login", json={"username": "pwduser4", "password": "newpassword1"})
+    assert new_resp.status_code == 200

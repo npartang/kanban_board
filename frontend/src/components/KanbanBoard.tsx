@@ -21,7 +21,7 @@ import { moveCard, type BoardData, type Priority } from "@/lib/kanban";
 import { useAuth } from "@/lib/auth-context";
 
 type ApiColumn = { id: number; title: string; position: number };
-type ApiCard = { id: number; column_id: number; title: string; details: string | null; priority: string; due_date: string | null; position: number };
+type ApiCard = { id: number; column_id: number; title: string; details: string | null; priority: string; due_date: string | null; labels: string[]; position: number };
 type ApiBoard = { id: number; name: string; columns: ApiColumn[]; cards: ApiCard[] };
 
 const toColumnId = (dbId: number) => `col-${dbId}`;
@@ -57,6 +57,7 @@ const toBoardData = (apiBoard: ApiBoard): BoardData => {
       details: card.details ?? "No details yet.",
       priority: (card.priority || "medium") as Priority,
       dueDate: card.due_date,
+      labels: card.labels ?? [],
     };
   }
   return { columns, cards };
@@ -75,6 +76,7 @@ export const KanbanBoard = () => {
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const renameTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -357,6 +359,7 @@ export const KanbanBoard = () => {
                     details: json.details ?? "No details yet.",
                     priority: (json.priority || "medium") as Priority,
                     dueDate: json.due_date,
+                    labels: json.labels ?? [],
                   },
                 },
                 columns: prev.columns.map((c) =>
@@ -382,6 +385,7 @@ export const KanbanBoard = () => {
       if (updates.details !== undefined) body.details = updates.details;
       if (updates.priority !== undefined) body.priority = updates.priority;
       if ("dueDate" in updates) body.due_date = updates.dueDate ?? "";
+      if (updates.labels !== undefined) body.labels = updates.labels;
 
       const res = await apiFetch(`/api/cards/${numId}`, {
         method: "PATCH",
@@ -404,6 +408,7 @@ export const KanbanBoard = () => {
                   details: updated.details ?? "No details yet.",
                   priority: (updated.priority || "medium") as Priority,
                   dueDate: updated.due_date,
+                  labels: updated.labels ?? [],
                 },
               },
             }
@@ -462,6 +467,21 @@ export const KanbanBoard = () => {
     );
   };
 
+  const filteredCardIds = useMemo(() => {
+    if (!board || !searchQuery.trim()) return null;
+    const q = searchQuery.toLowerCase();
+    return new Set(
+      Object.values(board.cards)
+        .filter(
+          (c) =>
+            c.title.toLowerCase().includes(q) ||
+            c.details.toLowerCase().includes(q) ||
+            c.labels.some((l) => l.toLowerCase().includes(q))
+        )
+        .map((c) => c.id)
+    );
+  }, [board, searchQuery]);
+
   const activeCard = activeCardId ? cardsById[activeCardId] : null;
   const activeBoard = boards.find((b) => b.id === activeBoardId);
 
@@ -503,6 +523,22 @@ export const KanbanBoard = () => {
             onDelete={handleDeleteBoard}
             onRename={handleRenameBoard}
           />
+
+          {board && (
+            <div className="relative max-w-sm">
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search cards…"
+                className="w-full rounded-full border border-[var(--stroke)] bg-white py-2 pl-9 pr-4 text-sm text-[var(--navy-dark)] outline-none transition focus:border-[var(--primary-blue)]"
+                aria-label="Search cards"
+              />
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--gray-text)]">
+                ⌕
+              </span>
+            </div>
+          )}
         </header>
 
         {isLoading && !board && (
@@ -535,7 +571,9 @@ export const KanbanBoard = () => {
                   <KanbanColumn
                     key={column.id}
                     column={column}
-                    cards={column.cardIds.map((cardId) => board.cards[cardId])}
+                    cards={column.cardIds
+                      .filter((id) => !filteredCardIds || filteredCardIds.has(id))
+                      .map((cardId) => board.cards[cardId])}
                     onRename={handleRenameColumn}
                     onAddCard={handleAddCard}
                     onDeleteCard={handleDeleteCard}

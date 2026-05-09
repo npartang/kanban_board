@@ -60,6 +60,7 @@ const setupFetchMock = () => {
             details: body.details ?? null,
             priority: body.priority ?? "medium",
             due_date: null,
+            labels: [],
             position: 0,
           }),
         } as Response);

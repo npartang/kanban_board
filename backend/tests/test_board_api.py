@@ -425,3 +425,161 @@ def test_move_card_within_same_column_reorders() -> None:
     )
     ids_in_order = [c["id"] for c in col_cards_after]
     assert ids_in_order.index(last_card["id"]) < ids_in_order.index(first_card["id"])
+
+
+# ---------------------------------------------------------------------------
+# Card priority and due date
+# ---------------------------------------------------------------------------
+
+def test_create_card_with_priority() -> None:
+    login_demo_user()
+    board = client.get("/api/board").json()
+    col_id = board["columns"][0]["id"]
+
+    card = client.post(
+        "/api/cards",
+        json={"column_id": col_id, "title": "High priority task", "priority": "high"},
+    ).json()
+    assert card["priority"] == "high"
+
+
+def test_create_card_with_due_date() -> None:
+    login_demo_user()
+    board = client.get("/api/board").json()
+    col_id = board["columns"][0]["id"]
+
+    card = client.post(
+        "/api/cards",
+        json={"column_id": col_id, "title": "Deadline task", "due_date": "2026-12-31"},
+    ).json()
+    assert card["due_date"] == "2026-12-31"
+
+
+def test_create_card_invalid_priority_defaults_to_medium() -> None:
+    login_demo_user()
+    board = client.get("/api/board").json()
+    col_id = board["columns"][0]["id"]
+
+    card = client.post(
+        "/api/cards",
+        json={"column_id": col_id, "title": "Task", "priority": "extreme"},
+    ).json()
+    assert card["priority"] == "medium"
+
+
+def test_update_card_priority() -> None:
+    login_demo_user()
+    board = client.get("/api/board").json()
+    col_id = board["columns"][0]["id"]
+
+    card = client.post("/api/cards", json={"column_id": col_id, "title": "T"}).json()
+    updated = client.patch(f"/api/cards/{card['id']}", json={"priority": "urgent"}).json()
+    assert updated["priority"] == "urgent"
+
+
+def test_update_card_due_date() -> None:
+    login_demo_user()
+    board = client.get("/api/board").json()
+    col_id = board["columns"][0]["id"]
+
+    card = client.post("/api/cards", json={"column_id": col_id, "title": "T"}).json()
+    updated = client.patch(f"/api/cards/{card['id']}", json={"due_date": "2026-06-01"}).json()
+    assert updated["due_date"] == "2026-06-01"
+
+
+def test_clear_card_due_date() -> None:
+    login_demo_user()
+    board = client.get("/api/board").json()
+    col_id = board["columns"][0]["id"]
+
+    card = client.post(
+        "/api/cards",
+        json={"column_id": col_id, "title": "T", "due_date": "2026-06-01"},
+    ).json()
+    updated = client.patch(f"/api/cards/{card['id']}", json={"due_date": ""}).json()
+    assert updated["due_date"] is None
+
+
+def test_board_cards_include_priority_and_due_date() -> None:
+    login_demo_user()
+    board_detail = client.get("/api/board").json()
+    col_id = board_detail["columns"][0]["id"]
+
+    client.post(
+        "/api/cards",
+        json={"column_id": col_id, "title": "Tagged", "priority": "low", "due_date": "2026-09-01"},
+    )
+
+    board_detail = client.get("/api/board").json()
+    tagged = next((c for c in board_detail["cards"] if c["title"] == "Tagged"), None)
+    assert tagged is not None
+    assert tagged["priority"] == "low"
+    assert tagged["due_date"] == "2026-09-01"
+
+
+# ---------------------------------------------------------------------------
+# Labels
+# ---------------------------------------------------------------------------
+
+def test_create_card_with_labels() -> None:
+    login_demo_user()
+    board_detail = client.get("/api/board").json()
+    col_id = board_detail["columns"][0]["id"]
+
+    r = client.post(
+        "/api/cards",
+        json={"column_id": col_id, "title": "Labeled card", "labels": ["Bug", "Urgent"]},
+    )
+    assert r.status_code == 201
+    assert r.json()["labels"] == ["Bug", "Urgent"]
+
+
+def test_create_card_default_labels_empty() -> None:
+    login_demo_user()
+    board_detail = client.get("/api/board").json()
+    col_id = board_detail["columns"][0]["id"]
+
+    r = client.post("/api/cards", json={"column_id": col_id, "title": "No labels"})
+    assert r.status_code == 201
+    assert r.json()["labels"] == []
+
+
+def test_update_card_labels() -> None:
+    login_demo_user()
+    board_detail = client.get("/api/board").json()
+    col_id = board_detail["columns"][0]["id"]
+    card_id = client.post(
+        "/api/cards", json={"column_id": col_id, "title": "To label"}
+    ).json()["id"]
+
+    r = client.patch(f"/api/cards/{card_id}", json={"labels": ["Feature", "Design"]})
+    assert r.status_code == 200
+    assert r.json()["labels"] == ["Feature", "Design"]
+
+
+def test_update_card_labels_to_empty() -> None:
+    login_demo_user()
+    board_detail = client.get("/api/board").json()
+    col_id = board_detail["columns"][0]["id"]
+    card_id = client.post(
+        "/api/cards", json={"column_id": col_id, "title": "Clear labels", "labels": ["Bug"]}
+    ).json()["id"]
+
+    r = client.patch(f"/api/cards/{card_id}", json={"labels": []})
+    assert r.status_code == 200
+    assert r.json()["labels"] == []
+
+
+def test_board_cards_include_labels() -> None:
+    login_demo_user()
+    board_detail = client.get("/api/board").json()
+    col_id = board_detail["columns"][0]["id"]
+
+    client.post(
+        "/api/cards",
+        json={"column_id": col_id, "title": "With labels", "labels": ["Testing"]},
+    )
+    board_detail = client.get("/api/board").json()
+    card = next((c for c in board_detail["cards"] if c["title"] == "With labels"), None)
+    assert card is not None
+    assert card["labels"] == ["Testing"]

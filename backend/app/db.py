@@ -69,7 +69,7 @@ def get_user_by_username(connection: sqlite3.Connection, username: str) -> sqlit
 
 def get_user_by_id(connection: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
   return connection.execute(
-    "SELECT id, username, created_at FROM users WHERE id = ?;",
+    "SELECT id, username, password_hash, created_at FROM users WHERE id = ?;",
     (user_id,),
   ).fetchone()
 

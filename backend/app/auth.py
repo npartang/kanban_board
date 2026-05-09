@@ -171,3 +171,46 @@ def me(user_id: int = Depends(get_current_user_id)) -> UserResponse:
     if user_row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return UserResponse(id=int(user_row["id"]), username=user_row["username"])
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.patch("/api/me/password", response_model=MessageResponse)
+def change_password(
+    payload: ChangePasswordRequest,
+    user_id: int = Depends(get_current_user_id),
+) -> MessageResponse:
+    if len(payload.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="New password must be at least 8 characters",
+        )
+
+    with db_connection() as connection:
+        user_row = get_user_by_id(connection, user_id)
+        if user_row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+        stored_hash = user_row["password_hash"]
+        try:
+            current_ok = bcrypt.checkpw(payload.current_password.encode(), stored_hash.encode())
+        except Exception:
+            current_ok = False
+
+        if not current_ok:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current password is incorrect",
+            )
+
+        new_hash = bcrypt.hashpw(payload.new_password.encode(), bcrypt.gensalt()).decode()
+        connection.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?;",
+            (new_hash, user_id),
+        )
+        connection.commit()
+
+    return MessageResponse(message="Password changed")

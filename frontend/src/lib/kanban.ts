@@ -1,7 +1,12 @@
+export type Priority = "low" | "medium" | "high" | "urgent";
+
 export type Card = {
   id: string;
   title: string;
   details: string;
+  priority: Priority;
+  dueDate: string | null;
+  labels: string[];
 };
 
 export type Column = {

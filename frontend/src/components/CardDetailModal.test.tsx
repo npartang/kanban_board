@@ -10,6 +10,7 @@ const mockCard: Card = {
   details: "Some description",
   priority: "medium",
   dueDate: "2026-06-15",
+  labels: [],
 };
 
 const mockColumns: Column[] = [
@@ -138,8 +139,9 @@ describe("CardDetailModal", () => {
     const user = userEvent.setup();
     defaultProps.onSave.mockResolvedValue(undefined);
     render(<CardDetailModal {...defaultProps} />);
-    await user.clear(screen.getByDisplayValue("Test card"));
-    await user.type(screen.getByDisplayValue(""), "Updated");
+    const titleInput = screen.getByLabelText("Card title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "Updated");
     await user.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(defaultProps.onClose).toHaveBeenCalledOnce());
   });
@@ -148,8 +150,9 @@ describe("CardDetailModal", () => {
     const user = userEvent.setup();
     defaultProps.onSave.mockRejectedValue(new Error("network error"));
     render(<CardDetailModal {...defaultProps} />);
-    await user.clear(screen.getByDisplayValue("Test card"));
-    await user.type(screen.getByDisplayValue(""), "Updated");
+    const titleInput = screen.getByLabelText("Card title");
+    await user.clear(titleInput);
+    await user.type(titleInput, "Updated");
     await user.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent("Failed to save changes")

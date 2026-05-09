@@ -8,6 +8,7 @@ export type CardUpdates = {
   details?: string;
   priority?: Priority;
   dueDate?: string | null;
+  labels?: string[];
 };
 
 type CardDetailModalProps = {
@@ -49,6 +50,8 @@ export const CardDetailModal = ({
   const [details, setDetails] = useState(card.details === "No details yet." ? "" : card.details);
   const [priority, setPriority] = useState<Priority>(card.priority);
   const [dueDate, setDueDate] = useState(card.dueDate ?? "");
+  const [labels, setLabels] = useState<string[]>(card.labels);
+  const [labelInput, setLabelInput] = useState("");
   const [selectedColumnId, setSelectedColumnId] = useState(currentColumnId);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +75,8 @@ export const CardDetailModal = ({
     title !== card.title ||
     (details !== (card.details === "No details yet." ? "" : card.details)) ||
     priority !== card.priority ||
-    dueDate !== (card.dueDate ?? "");
+    dueDate !== (card.dueDate ?? "") ||
+    JSON.stringify(labels) !== JSON.stringify(card.labels);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -85,6 +89,7 @@ export const CardDetailModal = ({
         details: details.trim() || undefined,
         priority,
         dueDate: dueDate || null,
+        labels,
       });
       onClose();
     } catch {
@@ -194,6 +199,61 @@ export const CardDetailModal = ({
                     Clear
                   </button>
                 )}
+              </div>
+            </div>
+
+            {/* Labels */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)]">
+                Labels
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {labels.map((label) => (
+                  <span
+                    key={label}
+                    className="flex items-center gap-1 rounded-full bg-[var(--surface)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--navy-dark)] border border-[var(--stroke)]"
+                  >
+                    {label}
+                    <button
+                      type="button"
+                      onClick={() => setLabels((prev) => prev.filter((l) => l !== label))}
+                      className="ml-0.5 text-[var(--gray-text)] hover:text-red-500"
+                      aria-label={`Remove label ${label}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={labelInput}
+                  onChange={(e) => setLabelInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const t = labelInput.trim();
+                      if (t && !labels.includes(t)) setLabels((prev) => [...prev, t]);
+                      setLabelInput("");
+                    }
+                  }}
+                  placeholder="Add label…"
+                  className="flex-1 rounded-xl border border-[var(--stroke)] bg-white px-3 py-1.5 text-sm text-[var(--navy-dark)] outline-none transition focus:border-[var(--primary-blue)]"
+                  aria-label="New label"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = labelInput.trim();
+                    if (t && !labels.includes(t)) setLabels((prev) => [...prev, t]);
+                    setLabelInput("");
+                  }}
+                  disabled={!labelInput.trim()}
+                  className="rounded-xl border border-[var(--stroke)] px-3 py-1.5 text-xs font-semibold text-[var(--gray-text)] hover:border-[var(--primary-blue)] disabled:opacity-40"
+                >
+                  Add
+                </button>
               </div>
             </div>
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -34,11 +35,17 @@ class ColumnOut(BaseModel):
     position: int
 
 
+VALID_PRIORITIES = frozenset({"low", "medium", "high", "urgent"})
+
+
 class CardOut(BaseModel):
     id: int
     column_id: int
     title: str
     details: str | None = None
+    priority: str = "medium"
+    due_date: str | None = None
+    labels: List[str] = []
     position: int
 
 
@@ -65,11 +72,17 @@ class CreateCardRequest(BaseModel):
     column_id: int
     title: str
     details: str | None = None
+    priority: str = "medium"
+    due_date: str | None = None
+    labels: List[str] = []
 
 
 class UpdateCardRequest(BaseModel):
     title: str | None = None
     details: str | None = None
+    priority: str | None = None
+    due_date: str | None = None
+    labels: List[str] | None = None
 
 
 class MoveCardRequest(BaseModel):
@@ -99,7 +112,7 @@ def _load_board(connection, board_id: int, seed: bool = False) -> BoardOut:
 
     card_rows = connection.execute(
         """
-        SELECT id, column_id, title, details, position
+        SELECT id, column_id, title, details, priority, due_date, labels, position
         FROM cards
         WHERE column_id IN (SELECT id FROM columns WHERE board_id = ?)
         ORDER BY column_id ASC, position ASC;
@@ -120,11 +133,24 @@ def _load_board(connection, board_id: int, seed: bool = False) -> BoardOut:
                 column_id=r["column_id"],
                 title=r["title"],
                 details=r["details"],
+                priority=r["priority"] or "medium",
+                due_date=r["due_date"],
+                labels=_parse_labels(r["labels"]),
                 position=r["position"],
             )
             for r in card_rows
         ],
     )
+
+
+def _parse_labels(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        return [str(l) for l in parsed] if isinstance(parsed, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
 
 
 def _verify_column_ownership(connection, column_id: int, user_id: int) -> None:
@@ -307,15 +333,17 @@ def create_card(
         ).fetchone()
         next_position = int(next_pos_row["next_pos"])
 
+        priority = payload.priority if payload.priority in VALID_PRIORITIES else "medium"
+        labels_json = json.dumps(payload.labels)
         cursor = connection.execute(
-            "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?);",
-            (payload.column_id, payload.title, payload.details, next_position),
+            "INSERT INTO cards (column_id, title, details, priority, due_date, labels, position) VALUES (?, ?, ?, ?, ?, ?, ?);",
+            (payload.column_id, payload.title, payload.details, priority, payload.due_date, labels_json, next_position),
         )
         card_id = int(cursor.lastrowid)
         connection.commit()
 
         card_row = connection.execute(
-            "SELECT id, column_id, title, details, position FROM cards WHERE id = ?;",
+            "SELECT id, column_id, title, details, priority, due_date, labels, position FROM cards WHERE id = ?;",
             (card_id,),
         ).fetchone()
 
@@ -324,6 +352,9 @@ def create_card(
         column_id=card_row["column_id"],
         title=card_row["title"],
         details=card_row["details"],
+        priority=card_row["priority"] or "medium",
+        due_date=card_row["due_date"],
+        labels=_parse_labels(card_row["labels"]),
         position=card_row["position"],
     )
 
@@ -337,20 +368,27 @@ def update_card(
     with db_connection() as connection:
         _verify_card_ownership(connection, card_id, user_id)
 
+        updates: list[tuple[object, int]] = []
         if payload.title is not None:
-            connection.execute(
-                "UPDATE cards SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;",
-                (payload.title, card_id),
-            )
+            updates.append(("UPDATE cards SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;", payload.title))
         if payload.details is not None:
-            connection.execute(
-                "UPDATE cards SET details = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;",
-                (payload.details, card_id),
-            )
+            updates.append(("UPDATE cards SET details = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;", payload.details))
+        if payload.priority is not None:
+            priority = payload.priority if payload.priority in VALID_PRIORITIES else "medium"
+            updates.append(("UPDATE cards SET priority = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;", priority))
+        if payload.due_date is not None:
+            # Empty string means "clear the due date"
+            due = payload.due_date if payload.due_date else None
+            updates.append(("UPDATE cards SET due_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;", due))
+        if payload.labels is not None:
+            updates.append(("UPDATE cards SET labels = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;", json.dumps(payload.labels)))
+
+        for sql, val in updates:
+            connection.execute(sql, (val, card_id))  # type: ignore[arg-type]
         connection.commit()
 
         card_row = connection.execute(
-            "SELECT id, column_id, title, details, position FROM cards WHERE id = ?;",
+            "SELECT id, column_id, title, details, priority, due_date, labels, position FROM cards WHERE id = ?;",
             (card_id,),
         ).fetchone()
 
@@ -359,6 +397,9 @@ def update_card(
         column_id=card_row["column_id"],
         title=card_row["title"],
         details=card_row["details"],
+        priority=card_row["priority"] or "medium",
+        due_date=card_row["due_date"],
+        labels=_parse_labels(card_row["labels"]),
         position=card_row["position"],
     )
 
