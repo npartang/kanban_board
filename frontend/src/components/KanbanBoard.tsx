@@ -16,11 +16,12 @@ import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
 import { AISidebar } from "@/components/AISidebar";
 import { BoardSelector, type BoardSummary } from "@/components/BoardSelector";
-import { moveCard, type BoardData } from "@/lib/kanban";
+import { CardDetailModal, type CardUpdates } from "@/components/CardDetailModal";
+import { moveCard, type BoardData, type Priority } from "@/lib/kanban";
 import { useAuth } from "@/lib/auth-context";
 
 type ApiColumn = { id: number; title: string; position: number };
-type ApiCard = { id: number; column_id: number; title: string; details: string | null; position: number };
+type ApiCard = { id: number; column_id: number; title: string; details: string | null; priority: string; due_date: string | null; position: number };
 type ApiBoard = { id: number; name: string; columns: ApiColumn[]; cards: ApiCard[] };
 
 const toColumnId = (dbId: number) => `col-${dbId}`;
@@ -50,7 +51,13 @@ const toBoardData = (apiBoard: ApiBoard): BoardData => {
   const cards: BoardData["cards"] = {};
   for (const card of apiBoard.cards) {
     const id = toCardId(card.id);
-    cards[id] = { id, title: card.title, details: card.details ?? "No details yet." };
+    cards[id] = {
+      id,
+      title: card.title,
+      details: card.details ?? "No details yet.",
+      priority: (card.priority || "medium") as Priority,
+      dueDate: card.due_date,
+    };
   }
   return { columns, cards };
 };
@@ -62,6 +69,7 @@ export const KanbanBoard = () => {
   const [activeBoardId, setActiveBoardId] = useState<number | null>(null);
   const [board, setBoard] = useState<BoardData | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
@@ -291,13 +299,22 @@ export const KanbanBoard = () => {
         });
         if (!res.ok) throw new Error(`Create card failed: ${res.status}`);
 
-        const json = (await res.json()) as { id: number; column_id: number; title: string; details: string | null; position: number };
+        const json = (await res.json()) as ApiCard;
         const cardId = toCardId(json.id);
         setBoard((prev) =>
           prev
             ? {
                 ...prev,
-                cards: { ...prev.cards, [cardId]: { id: cardId, title: json.title, details: json.details ?? "No details yet." } },
+                cards: {
+                  ...prev.cards,
+                  [cardId]: {
+                    id: cardId,
+                    title: json.title,
+                    details: json.details ?? "No details yet.",
+                    priority: (json.priority || "medium") as Priority,
+                    dueDate: json.due_date,
+                  },
+                },
                 columns: prev.columns.map((c) =>
                   fromColumnId(c.id) === json.column_id ? { ...c, cardIds: [...c.cardIds, cardId] } : c
                 ),
@@ -309,6 +326,80 @@ export const KanbanBoard = () => {
       }
     })();
   };
+
+  const handleEditCard = (cardId: string) => setEditingCardId(cardId);
+
+  const handleSaveCard = useCallback(
+    async (updates: CardUpdates) => {
+      if (!editingCardId) throw new Error("No card selected");
+      const numId = fromCardId(editingCardId);
+      const body: Record<string, unknown> = {};
+      if (updates.title !== undefined) body.title = updates.title;
+      if (updates.details !== undefined) body.details = updates.details;
+      if (updates.priority !== undefined) body.priority = updates.priority;
+      if ("dueDate" in updates) body.due_date = updates.dueDate ?? "";
+
+      const res = await apiFetch(`/api/cards/${numId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`Save failed: ${res.status}`);
+
+      const updated = (await res.json()) as ApiCard;
+      const cid = editingCardId;
+      setBoard((prev) =>
+        prev
+          ? {
+              ...prev,
+              cards: {
+                ...prev.cards,
+                [cid]: {
+                  id: cid,
+                  title: updated.title,
+                  details: updated.details ?? "No details yet.",
+                  priority: (updated.priority || "medium") as Priority,
+                  dueDate: updated.due_date,
+                },
+              },
+            }
+          : prev
+      );
+    },
+    [editingCardId, apiFetch]
+  );
+
+  const handleMoveCardFromModal = useCallback(
+    (targetColumnId: string) => {
+      if (!editingCardId || !board) return;
+      const cardId = editingCardId;
+      const currentColumn = board.columns.find((c) => c.cardIds.includes(cardId));
+      if (!currentColumn || currentColumn.id === targetColumnId) return;
+      const targetColumn = board.columns.find((c) => c.id === targetColumnId);
+      if (!targetColumn) return;
+      const position = targetColumn.cardIds.length;
+
+      setBoard((prev) =>
+        prev
+          ? {
+              ...prev,
+              columns: prev.columns.map((c) => {
+                if (c.id === currentColumn.id) return { ...c, cardIds: c.cardIds.filter((id) => id !== cardId) };
+                if (c.id === targetColumnId) return { ...c, cardIds: [...c.cardIds, cardId] };
+                return c;
+              }),
+            }
+          : prev
+      );
+
+      void apiFetch(`/api/cards/${fromCardId(cardId)}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_column_id: fromColumnId(targetColumnId), position }),
+      }).catch((err) => console.error("Failed to move card:", err));
+    },
+    [editingCardId, board, apiFetch]
+  );
 
   const handleDeleteCard = (columnId: string, cardId: string) => {
     setBoard((prev) => {
@@ -404,6 +495,7 @@ export const KanbanBoard = () => {
                     onRename={handleRenameColumn}
                     onAddCard={handleAddCard}
                     onDeleteCard={handleDeleteCard}
+                    onEditCard={handleEditCard}
                     isHighlighted={overColumnId === column.id}
                   />
                 ))}
@@ -422,6 +514,28 @@ export const KanbanBoard = () => {
           </div>
         )}
       </main>
+
+      {editingCardId && board && (() => {
+        const card = board.cards[editingCardId];
+        const currentColumn = board.columns.find((c) => c.cardIds.includes(editingCardId));
+        if (!card || !currentColumn) return null;
+        return (
+          <CardDetailModal
+            card={card}
+            currentColumnId={currentColumn.id}
+            columns={board.columns}
+            onClose={() => setEditingCardId(null)}
+            onSave={handleSaveCard}
+            onDelete={() => {
+              const colId = currentColumn.id;
+              const cid = editingCardId;
+              setEditingCardId(null);
+              handleDeleteCard(colId, cid);
+            }}
+            onMove={handleMoveCardFromModal}
+          />
+        );
+      })()}
     </div>
   );
 };
