@@ -12,6 +12,7 @@ type KanbanColumnProps = {
   onAddCard: (columnId: string, title: string, details: string) => void;
   onDeleteCard: (columnId: string, cardId: string) => void;
   onEditCard?: (cardId: string) => void;
+  onDeleteColumn?: (columnId: string) => void;
   isHighlighted?: boolean;
 };
 
@@ -22,6 +23,7 @@ export const KanbanColumn = ({
   onAddCard,
   onDeleteCard,
   onEditCard,
+  onDeleteColumn,
   isHighlighted,
 }: KanbanColumnProps) => {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
@@ -50,6 +52,20 @@ export const KanbanColumn = ({
             aria-label="Column title"
           />
         </div>
+        {onDeleteColumn && (
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm(`Delete "${column.title}" and all its cards? This cannot be undone.`)) {
+                onDeleteColumn(column.id);
+              }
+            }}
+            className="mt-1 shrink-0 rounded-full border border-transparent px-2 py-1 text-xs text-[var(--gray-text)] transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+            aria-label={`Delete column ${column.title}`}
+          >
+            ×
+          </button>
+        )}
       </div>
       <div className="mt-4 flex flex-1 flex-col gap-3">
         <SortableContext items={column.cardIds} strategy={verticalListSortingStrategy}>

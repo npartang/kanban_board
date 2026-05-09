@@ -2,6 +2,7 @@
 
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { AuthContext } from "@/lib/auth-context";
+import { ChangePasswordModal } from "@/components/ChangePasswordModal";
 
 type LoginGateProps = {
   children: ReactNode;
@@ -15,6 +16,7 @@ type Mode = "login" | "register";
 export const LoginGate = ({ children }: LoginGateProps) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loggedInUsername, setLoggedInUsername] = useState("");
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [mode, setMode] = useState<Mode>("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -248,16 +250,28 @@ export const LoginGate = ({ children }: LoginGateProps) => {
                 <p className="text-sm font-medium text-[var(--navy-dark)]">{loggedInUsername}</p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-full border border-[var(--stroke)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)] transition hover:border-[var(--primary-blue)] hover:text-[var(--navy-dark)]"
-            >
-              Log out
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowChangePassword(true)}
+                className="rounded-full border border-[var(--stroke)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)] transition hover:border-[var(--primary-blue)] hover:text-[var(--navy-dark)]"
+              >
+                Change password
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-full border border-[var(--stroke)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)] transition hover:border-[var(--primary-blue)] hover:text-[var(--navy-dark)]"
+              >
+                Log out
+              </button>
+            </div>
           </div>
         </header>
         {children}
+        {showChangePassword && (
+          <ChangePasswordModal onClose={() => setShowChangePassword(false)} />
+        )}
       </div>
     </AuthContext.Provider>
   );

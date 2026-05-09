@@ -73,6 +73,8 @@ export const KanbanBoard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
+  const [addingColumn, setAddingColumn] = useState(false);
+  const [newColumnTitle, setNewColumnTitle] = useState("");
 
   const renameTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -221,6 +223,48 @@ export const KanbanBoard = () => {
     if (id === activeBoardId) return;
     setBoard(null);
     setActiveBoardId(id);
+  };
+
+  // ---- Column management ----
+
+  const handleAddColumn = async (title: string) => {
+    if (!activeBoardId) return;
+    const res = await apiFetch(`/api/boards/${activeBoardId}/columns`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    if (!res.ok) return;
+    const col = (await res.json()) as { id: number; title: string; position: number };
+    setBoard((prev) =>
+      prev
+        ? {
+            ...prev,
+            columns: [
+              ...prev.columns,
+              { id: toColumnId(col.id), title: col.title, cardIds: [] },
+            ],
+          }
+        : prev
+    );
+  };
+
+  const handleDeleteColumn = async (columnId: string) => {
+    const res = await apiFetch(`/api/columns/${fromColumnId(columnId)}`, { method: "DELETE" });
+    if (!res.ok) return;
+    setBoard((prev) => {
+      if (!prev) return prev;
+      const col = prev.columns.find((c) => c.id === columnId);
+      const removedCardIds = new Set(col?.cardIds ?? []);
+      const nextCards = Object.fromEntries(
+        Object.entries(prev.cards).filter(([id]) => !removedCardIds.has(id))
+      );
+      return {
+        ...prev,
+        columns: prev.columns.filter((c) => c.id !== columnId),
+        cards: nextCards,
+      };
+    });
   };
 
   // ---- DnD ----
@@ -496,6 +540,7 @@ export const KanbanBoard = () => {
                     onAddCard={handleAddCard}
                     onDeleteCard={handleDeleteCard}
                     onEditCard={handleEditCard}
+                    onDeleteColumn={handleDeleteColumn}
                     isHighlighted={overColumnId === column.id}
                   />
                 ))}
@@ -508,6 +553,57 @@ export const KanbanBoard = () => {
                 ) : null}
               </DragOverlay>
             </DndContext>
+            <div className="shrink-0">
+              {!addingColumn ? (
+                <button
+                  type="button"
+                  onClick={() => { setAddingColumn(true); setNewColumnTitle(""); }}
+                  className="flex items-center gap-2 rounded-2xl border border-dashed border-[var(--stroke)] bg-white/60 px-4 py-3 text-xs font-semibold text-[var(--gray-text)] transition hover:border-[var(--primary-blue)] hover:text-[var(--primary-blue)]"
+                  aria-label="Add a column"
+                >
+                  + Add column
+                </button>
+              ) : (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const t = newColumnTitle.trim();
+                    if (!t) return;
+                    setAddingColumn(false);
+                    await handleAddColumn(t);
+                  }}
+                  className="rounded-2xl border border-[var(--stroke)] bg-white p-4 shadow-[var(--shadow)]"
+                >
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)]">
+                    New column
+                  </p>
+                  <input
+                    autoFocus
+                    value={newColumnTitle}
+                    onChange={(e) => setNewColumnTitle(e.target.value)}
+                    placeholder="Column title"
+                    className="w-full rounded-xl border border-[var(--stroke)] px-3 py-2 text-sm text-[var(--navy-dark)] outline-none focus:border-[var(--primary-blue)]"
+                    aria-label="New column title"
+                  />
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={!newColumnTitle.trim()}
+                      className="flex-1 rounded-full bg-[var(--primary-blue)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      Add
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddingColumn(false)}
+                      className="flex-1 rounded-full border border-[var(--stroke)] px-3 py-1.5 text-xs font-semibold text-[var(--gray-text)]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
             {activeBoardId !== null && (
               <AISidebar onBoardUpdated={() => activeBoardId !== null && void loadBoard(activeBoardId)} />
             )}

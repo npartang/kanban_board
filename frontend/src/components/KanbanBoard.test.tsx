@@ -50,7 +50,7 @@ const setupFetchMock = () => {
       }
 
       if (url.endsWith("/api/cards") && method === "POST") {
-        const body = init?.body ? (JSON.parse(init.body as string) as { column_id?: number; title?: string; details?: string }) : {};
+        const body = init?.body ? (JSON.parse(init.body as string) as { column_id?: number; title?: string; details?: string; priority?: string }) : {};
         return Promise.resolve({
           ok: true, status: 201,
           json: async () => ({
@@ -58,9 +58,23 @@ const setupFetchMock = () => {
             column_id: body.column_id ?? 1,
             title: body.title ?? "",
             details: body.details ?? null,
+            priority: body.priority ?? "medium",
+            due_date: null,
             position: 0,
           }),
         } as Response);
+      }
+
+      if (/\/api\/boards\/\d+\/columns$/.test(url) && method === "POST") {
+        const body = init?.body ? (JSON.parse(init.body as string) as { title?: string }) : {};
+        return Promise.resolve({
+          ok: true, status: 201,
+          json: async () => ({ id: 6, title: body.title ?? "New Column", position: 5 }),
+        } as Response);
+      }
+
+      if (/\/api\/columns\/\d+$/.test(url) && method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 204, json: async () => ({}) } as Response);
       }
 
       if (/\/api\/cards\/\d+$/.test(url) && method === "DELETE") {
@@ -108,6 +122,32 @@ describe("KanbanBoard", () => {
     await userEvent.clear(input);
     await userEvent.type(input, "New Name");
     expect(input).toHaveValue("New Name");
+  });
+
+  it("adds a new column via the Add column form", async () => {
+    render(<KanbanBoard />);
+    await screen.findAllByTestId(/column-/i);
+
+    await userEvent.click(screen.getByRole("button", { name: /add a column/i }));
+    const input = screen.getByRole("textbox", { name: /new column title/i });
+    await userEvent.type(input, "Sprint 1");
+    await userEvent.click(screen.getByRole("button", { name: /^add$/i }));
+
+    expect(await screen.findByDisplayValue("Sprint 1")).toBeInTheDocument();
+  });
+
+  it("deletes a column when confirmed", async () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+    render(<KanbanBoard />);
+    const columns = await screen.findAllByTestId(/column-/i);
+    expect(columns).toHaveLength(5);
+
+    const firstColumn = columns[0];
+    const deleteBtn = within(firstColumn).getByRole("button", { name: /delete column/i });
+    await userEvent.click(deleteBtn);
+
+    const remaining = screen.getAllByTestId(/column-/i);
+    expect(remaining).toHaveLength(4);
   });
 
   it("adds and removes a card", async () => {
