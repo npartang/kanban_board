@@ -9,26 +9,28 @@ from app.auth import router as auth_router
 from app.board_api import router as board_router
 from app.ai import router as ai_router
 from app.ai_kanban import router as ai_kanban_router
-from app.db import ensure_schema
+from app.db import db_connection, ensure_demo_user, ensure_schema
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     ensure_schema()
+    with db_connection() as connection:
+        ensure_demo_user(connection)
     yield
 
 
-app = FastAPI(title="Project Management MVP Backend", lifespan=lifespan)
+app = FastAPI(title="Project Management Backend", lifespan=lifespan)
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-  return {"status": "ok"}
+    return {"status": "ok"}
 
 
 @app.get("/api/hello")
 async def hello() -> dict[str, str]:
-  return {"message": "hello world"}
+    return {"message": "hello world"}
 
 
 BASE_DIR = Path(__file__).resolve().parent

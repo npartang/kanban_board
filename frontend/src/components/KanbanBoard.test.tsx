@@ -3,9 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import { KanbanBoard } from "@/components/KanbanBoard";
 
-const mockBoardResponse = {
+const mockBoardDetail = {
   id: 1,
-  name: "My board",
+  name: "My Board",
   columns: [
     { id: 1, title: "Backlog", position: 0 },
     { id: 2, title: "Discovery", position: 1 },
@@ -16,70 +16,80 @@ const mockBoardResponse = {
   cards: [],
 };
 
+const mockBoardList = [{ id: 1, name: "My Board" }];
+
+type FetchInput = RequestInfo | URL;
+
 const setupFetchMock = () => {
-  (globalThis as any).fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === "string" ? input : input.toString();
-    const method = (init?.method ?? "GET").toUpperCase();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: FetchInput, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = (init?.method ?? "GET").toUpperCase();
 
-    if (url.endsWith("/api/board") && method === "GET") {
-      return Promise.resolve({
-        ok: true,
-        json: async () => mockBoardResponse,
-      } as Response);
-    }
+      if (url.endsWith("/api/boards") && method === "GET") {
+        return Promise.resolve({
+          ok: true, status: 200, json: async () => mockBoardList,
+        } as Response);
+      }
 
-    if (url.endsWith("/api/columns/1/rename") && method === "POST") {
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({}),
-      } as Response);
-    }
+      if (/\/api\/boards\/1$/.test(url) && method === "GET") {
+        return Promise.resolve({
+          ok: true, status: 200, json: async () => mockBoardDetail,
+        } as Response);
+      }
 
-    if (url.endsWith("/api/cards") && method === "POST") {
-      const body = init?.body ? JSON.parse(init.body as string) : {};
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({
-          id: 101,
-          column_id: body.column_id ?? 1,
-          title: body.title,
-          details: body.details,
-          position: 0,
-        }),
-      } as Response);
-    }
+      if (url.endsWith("/api/board") && method === "GET") {
+        return Promise.resolve({
+          ok: true, status: 200, json: async () => mockBoardDetail,
+        } as Response);
+      }
 
-    if (/\/api\/cards\/\d+$/.test(url) && method === "DELETE") {
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({}),
-      } as Response);
-    }
+      if (url.endsWith("/api/columns/1/rename") && method === "POST") {
+        return Promise.resolve({ ok: true, status: 204, json: async () => ({}) } as Response);
+      }
 
-    if (/\/api\/cards\/\d+\/move$/.test(url) && method === "POST") {
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({}),
-      } as Response);
-    }
+      if (url.endsWith("/api/cards") && method === "POST") {
+        const body = init?.body ? (JSON.parse(init.body as string) as { column_id?: number; title?: string; details?: string }) : {};
+        return Promise.resolve({
+          ok: true, status: 201,
+          json: async () => ({
+            id: 101,
+            column_id: body.column_id ?? 1,
+            title: body.title ?? "",
+            details: body.details ?? null,
+            position: 0,
+          }),
+        } as Response);
+      }
 
-    return Promise.reject(new Error(`Unexpected fetch call: ${url} ${method}`));
-  });
+      if (/\/api\/cards\/\d+$/.test(url) && method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 204, json: async () => ({}) } as Response);
+      }
+
+      if (/\/api\/cards\/\d+\/move$/.test(url) && method === "POST") {
+        return Promise.resolve({ ok: true, status: 204, json: async () => ({}) } as Response);
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch call: ${method} ${url}`));
+    })
+  );
 };
-
-const getFirstColumn = () => screen.getAllByTestId(/column-/i)[0];
 
 describe("KanbanBoard", () => {
   beforeEach(() => {
     setupFetchMock();
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("shows an error when the board cannot be loaded", async () => {
-    (globalThis as any).fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: async () => ({}),
-    } as Response);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response)
+    );
 
     render(<KanbanBoard />);
     await screen.findByText(/unable to load board/i);
@@ -103,9 +113,7 @@ describe("KanbanBoard", () => {
   it("adds and removes a card", async () => {
     render(<KanbanBoard />);
     const column = (await screen.findAllByTestId(/column-/i))[0];
-    const addButton = within(column).getByRole("button", {
-      name: /add a card/i,
-    });
+    const addButton = within(column).getByRole("button", { name: /add a card/i });
     await userEvent.click(addButton);
 
     const titleInput = within(column).getByPlaceholderText(/card title/i);
@@ -114,14 +122,10 @@ describe("KanbanBoard", () => {
     await userEvent.type(detailsInput, "Notes");
 
     await userEvent.click(within(column).getByRole("button", { name: /add card/i }));
-
     expect(within(column).getByText("New card")).toBeInTheDocument();
 
-    const deleteButton = within(column).getByRole("button", {
-      name: /delete new card/i,
-    });
+    const deleteButton = within(column).getByRole("button", { name: /delete new card/i });
     await userEvent.click(deleteButton);
-
     expect(within(column).queryByText("New card")).not.toBeInTheDocument();
   });
 });

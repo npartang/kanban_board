@@ -4,6 +4,11 @@ import sqlite3
 from typing import Iterable
 
 
+# Migration: drop the old unique-per-user constraint so a user can have many boards.
+_MIGRATIONS: Iterable[str] = (
+  "DROP INDEX IF EXISTS idx_boards_user_unique;",
+)
+
 SCHEMA_STATEMENTS: Iterable[str] = (
   """
   PRAGMA foreign_keys = ON;
@@ -27,7 +32,7 @@ SCHEMA_STATEMENTS: Iterable[str] = (
   );
   """,
   """
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_boards_user_unique
+  CREATE INDEX IF NOT EXISTS idx_boards_user_id
   ON boards(user_id);
   """,
   """
@@ -63,14 +68,12 @@ SCHEMA_STATEMENTS: Iterable[str] = (
 
 
 def apply_schema(connection: sqlite3.Connection) -> None:
-  """Apply the SQLite schema for the application.
-
-  This function is idempotent: it can be run multiple times safely.
-  """
-
-  # Ensure foreign key enforcement is on for this connection.
+  """Apply the SQLite schema. Idempotent — safe to call multiple times."""
   connection.execute("PRAGMA foreign_keys = ON;")
+
+  for migration in _MIGRATIONS:
+    connection.execute(migration)
+  connection.commit()
 
   for statement in SCHEMA_STATEMENTS:
     connection.executescript(statement)
-

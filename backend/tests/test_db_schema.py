@@ -72,7 +72,8 @@ def test_cascade_delete_removes_child_rows() -> None:
     assert count == 0
 
 
-def test_one_board_per_user_enforced() -> None:
+def test_multiple_boards_per_user_allowed() -> None:
+  """Users can own multiple boards (unique-per-user constraint was intentionally removed)."""
   connection = create_in_memory_db()
   cursor = connection.cursor()
 
@@ -82,21 +83,16 @@ def test_one_board_per_user_enforced() -> None:
   )
   user_id = cursor.lastrowid
 
-  cursor.execute(
-    "INSERT INTO boards (user_id, name) VALUES (?, ?);",
-    (user_id, "First"),
-  )
-
-  # Second board for same user should violate the unique index on user_id
-  try:
+  for name in ("Board A", "Board B", "Board C"):
     cursor.execute(
       "INSERT INTO boards (user_id, name) VALUES (?, ?);",
-      (user_id, "Second"),
+      (user_id, name),
     )
-    connection.commit()
-  except sqlite3.IntegrityError:
-    # Expected: unique constraint prevents a second board
-    pass
-  else:
-    raise AssertionError("Expected IntegrityError when inserting second board for same user")
+
+  connection.commit()
+
+  count = connection.execute(
+    "SELECT COUNT(*) FROM boards WHERE user_id = ?;", (user_id,)
+  ).fetchone()[0]
+  assert count == 3
 
