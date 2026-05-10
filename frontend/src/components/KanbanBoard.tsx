@@ -12,6 +12,7 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { SortableContext, horizontalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
 import { AISidebar } from "@/components/AISidebar";
@@ -70,6 +71,7 @@ export const KanbanBoard = () => {
   const [activeBoardId, setActiveBoardId] = useState<number | null>(null);
   const [board, setBoard] = useState<BoardData | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -274,11 +276,22 @@ export const KanbanBoard = () => {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const cardsById = useMemo(() => board?.cards ?? {}, [board]);
 
-  const handleDragStart = (event: DragStartEvent) => setActiveCardId(event.active.id as string);
+  const handleDragStart = (event: DragStartEvent) => {
+    const id = String(event.active.id);
+    if (id.startsWith("col-")) {
+      setActiveColumnId(id);
+      setActiveCardId(null);
+    } else {
+      setActiveCardId(id);
+      setActiveColumnId(null);
+    }
+  };
 
   const handleDragOver = (event: DragOverEvent) => {
     if (!board) return;
-    const { over } = event;
+    const { active, over } = event;
+    // Skip column-to-column drag (handled in handleDragEnd)
+    if (String(active.id).startsWith("col-")) { setOverColumnId(null); return; }
     if (!over) { setOverColumnId(null); return; }
     const overId = String(over.id);
     const column =
@@ -291,11 +304,33 @@ export const KanbanBoard = () => {
     if (!board) return;
     const { active, over } = event;
     setActiveCardId(null);
+    setActiveColumnId(null);
     setOverColumnId(null);
     if (!over || active.id === over.id) return;
 
-    const movedCardId = active.id as string;
-    const nextColumns = moveCard(board.columns, movedCardId, over.id as string);
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    // Column reorder
+    if (activeId.startsWith("col-") && overId.startsWith("col-")) {
+      const oldIndex = board.columns.findIndex((c) => c.id === activeId);
+      const newIndex = board.columns.findIndex((c) => c.id === overId);
+      if (oldIndex === -1 || newIndex === -1) return;
+      const nextColumns = arrayMove(board.columns, oldIndex, newIndex);
+      setBoard((prev) => prev ? { ...prev, columns: nextColumns } : prev);
+      if (activeBoardId !== null) {
+        void apiFetch(`/api/boards/${activeBoardId}/reorder-columns`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ column_ids: nextColumns.map((c) => fromColumnId(c.id)) }),
+        }).catch((err) => console.error("Failed to persist column order:", err));
+      }
+      return;
+    }
+
+    // Card move
+    const movedCardId = activeId;
+    const nextColumns = moveCard(board.columns, movedCardId, overId);
     setBoard((prev) => prev ? { ...prev, columns: nextColumns } : prev);
 
     const targetColumn = nextColumns.find((c) => c.cardIds.includes(movedCardId));
@@ -566,27 +601,38 @@ export const KanbanBoard = () => {
               onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
             >
-              <section className="grid flex-1 gap-6 lg:grid-cols-5">
-                {board.columns.map((column) => (
-                  <KanbanColumn
-                    key={column.id}
-                    column={column}
-                    cards={column.cardIds
-                      .filter((id) => !filteredCardIds || filteredCardIds.has(id))
-                      .map((cardId) => board.cards[cardId])}
-                    onRename={handleRenameColumn}
-                    onAddCard={handleAddCard}
-                    onDeleteCard={handleDeleteCard}
-                    onEditCard={handleEditCard}
-                    onDeleteColumn={handleDeleteColumn}
-                    isHighlighted={overColumnId === column.id}
-                  />
-                ))}
-              </section>
+              <SortableContext
+                items={board.columns.map((c) => c.id)}
+                strategy={horizontalListSortingStrategy}
+              >
+                <section className="grid flex-1 gap-6 lg:grid-cols-5">
+                  {board.columns.map((column) => (
+                    <KanbanColumn
+                      key={column.id}
+                      column={column}
+                      cards={column.cardIds
+                        .filter((id) => !filteredCardIds || filteredCardIds.has(id))
+                        .map((cardId) => board.cards[cardId])}
+                      onRename={handleRenameColumn}
+                      onAddCard={handleAddCard}
+                      onDeleteCard={handleDeleteCard}
+                      onEditCard={handleEditCard}
+                      onDeleteColumn={handleDeleteColumn}
+                      isHighlighted={overColumnId === column.id}
+                    />
+                  ))}
+                </section>
+              </SortableContext>
               <DragOverlay>
                 {activeCard ? (
                   <div className="w-[260px]">
                     <KanbanCardPreview card={activeCard} />
+                  </div>
+                ) : activeColumnId && board ? (
+                  <div className="w-[260px] rounded-3xl border-2 border-[var(--accent-yellow)] bg-[var(--surface-strong)] p-4 opacity-80 shadow-[var(--shadow)]">
+                    <p className="font-display text-sm font-semibold text-[var(--navy-dark)]">
+                      {board.columns.find((c) => c.id === activeColumnId)?.title ?? "Column"}
+                    </p>
                   </div>
                 ) : null}
               </DragOverlay>

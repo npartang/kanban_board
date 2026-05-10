@@ -90,6 +90,10 @@ class MoveCardRequest(BaseModel):
     position: int
 
 
+class ReorderColumnsRequest(BaseModel):
+    column_ids: List[int]
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -312,6 +316,32 @@ def delete_column(
     with db_connection() as connection:
         _verify_column_ownership(connection, column_id, user_id)
         connection.execute("DELETE FROM columns WHERE id = ?;", (column_id,))
+        connection.commit()
+
+
+@router.post("/api/boards/{board_id}/reorder-columns", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_columns(
+    board_id: int,
+    payload: ReorderColumnsRequest,
+    user_id: int = Depends(get_current_user_id),
+) -> None:
+    with db_connection() as connection:
+        if get_board_for_user(connection, board_id, user_id) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
+        for position, column_id in enumerate(payload.column_ids):
+            row = connection.execute(
+                "SELECT id FROM columns WHERE id = ? AND board_id = ?;",
+                (column_id, board_id),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Column {column_id} not found in this board",
+                )
+            connection.execute(
+                "UPDATE columns SET position = ? WHERE id = ?;",
+                (position, column_id),
+            )
         connection.commit()
 
 

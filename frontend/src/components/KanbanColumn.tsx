@@ -1,6 +1,6 @@
 import clsx from "clsx";
-import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { Card, Column } from "@/lib/kanban";
 import { KanbanCard } from "@/components/KanbanCard";
 import { NewCardForm } from "@/components/NewCardForm";
@@ -26,21 +26,42 @@ export const KanbanColumn = ({
   onDeleteColumn,
   isHighlighted,
 }: KanbanColumnProps) => {
-  const { setNodeRef, isOver } = useDroppable({ id: column.id });
+  const {
+    setNodeRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+    isOver,
+  } = useSortable({ id: column.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
 
   return (
     <section
       ref={setNodeRef}
+      style={style}
       className={clsx(
         "flex min-h-[520px] flex-col rounded-3xl border border-[var(--stroke)] bg-[var(--surface-strong)] p-4 shadow-[var(--shadow)] transition",
-        (isOver || isHighlighted) && "ring-2 ring-[var(--accent-yellow)]"
+        (isOver || isHighlighted) && "ring-2 ring-[var(--accent-yellow)]",
+        isDragging && "opacity-60"
       )}
       data-testid={`column-${column.id}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="w-full">
           <div className="flex items-center gap-3">
-            <div className="h-2 w-10 rounded-full bg-[var(--accent-yellow)]" />
+            {/* Drag handle for column reordering */}
+            <div
+              {...attributes}
+              {...listeners}
+              className="h-2 w-10 cursor-grab rounded-full bg-[var(--accent-yellow)] active:cursor-grabbing"
+              aria-label="Drag to reorder column"
+            />
             <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)]">
               {cards.length} cards
             </span>
@@ -55,6 +76,7 @@ export const KanbanColumn = ({
         {onDeleteColumn && (
           <button
             type="button"
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={() => {
               if (window.confirm(`Delete "${column.title}" and all its cards? This cannot be undone.`)) {
                 onDeleteColumn(column.id);

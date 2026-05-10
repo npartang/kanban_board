@@ -583,3 +583,40 @@ def test_board_cards_include_labels() -> None:
     card = next((c for c in board_detail["cards"] if c["title"] == "With labels"), None)
     assert card is not None
     assert card["labels"] == ["Testing"]
+
+
+# ---------------------------------------------------------------------------
+# Column reordering
+# ---------------------------------------------------------------------------
+
+def test_reorder_columns_persists_new_order() -> None:
+    login_demo_user()
+    board_id = client.post("/api/boards", json={"name": "Reorder Test"}).json()["id"]
+    cols = client.get(f"/api/boards/{board_id}").json()["columns"]
+    reversed_ids = [c["id"] for c in reversed(cols)]
+
+    r = client.post(f"/api/boards/{board_id}/reorder-columns", json={"column_ids": reversed_ids})
+    assert r.status_code == 204
+
+    new_cols = client.get(f"/api/boards/{board_id}").json()["columns"]
+    assert [c["id"] for c in new_cols] == reversed_ids
+
+
+def test_reorder_columns_wrong_board_returns_400() -> None:
+    login_demo_user()
+    board1_id = client.post("/api/boards", json={"name": "Board1"}).json()["id"]
+    board2_id = client.post("/api/boards", json={"name": "Board2"}).json()["id"]
+    cols1 = client.get(f"/api/boards/{board1_id}").json()["columns"]
+
+    # Use board1's column IDs in board2's reorder request — should fail
+    r = client.post(
+        f"/api/boards/{board2_id}/reorder-columns",
+        json={"column_ids": [c["id"] for c in cols1]},
+    )
+    assert r.status_code == 400
+
+
+def test_reorder_columns_requires_auth() -> None:
+    client.post("/api/logout")
+    r = client.post("/api/boards/1/reorder-columns", json={"column_ids": [1, 2]})
+    assert r.status_code == 401
