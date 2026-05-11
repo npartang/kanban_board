@@ -33,7 +33,14 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
   };
 
   const today = new Date().toISOString().split("T")[0];
+  const thisWeek = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().split("T")[0];
+  })();
   const isOverdue = !!card.dueDate && card.dueDate < today;
+  const isDueToday = card.dueDate === today;
+  const isDueSoon = !!card.dueDate && card.dueDate > today && card.dueDate <= thisWeek;
   const formattedDate = card.dueDate
     ? new Date(card.dueDate + "T00:00:00").toLocaleDateString(undefined, {
         month: "short",
@@ -76,11 +83,14 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
             {formattedDate && (
               <span
                 className={clsx(
-                  "text-[11px] font-medium",
-                  isOverdue ? "text-red-500" : "text-[var(--gray-text)]"
+                  "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                  isOverdue && "bg-red-50 text-red-600",
+                  isDueToday && "bg-orange-50 text-orange-600",
+                  isDueSoon && !isDueToday && "bg-amber-50 text-amber-600",
+                  !isOverdue && !isDueToday && !isDueSoon && "text-[var(--gray-text)]"
                 )}
               >
-                {isOverdue ? "Overdue · " : "Due "}{formattedDate}
+                {isOverdue ? `Overdue · ${formattedDate}` : isDueToday ? `Today · ${formattedDate}` : isDueSoon ? `Soon · ${formattedDate}` : `Due ${formattedDate}`}
               </span>
             )}
             {card.labels.map((label) => (

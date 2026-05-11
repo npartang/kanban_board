@@ -171,6 +171,23 @@ export const KanbanColumn = ({
             className="mt-3 w-full bg-transparent font-display text-lg font-semibold text-[var(--navy-dark)] outline-none"
             aria-label="Column title"
           />
+          {column.wipLimit !== null && column.wipLimit > 0 && (
+            <div
+              className="mt-2 h-1 w-full rounded-full bg-[var(--stroke)]"
+              role="progressbar"
+              aria-valuenow={cards.length}
+              aria-valuemax={column.wipLimit}
+              aria-label={`${cards.length} of ${column.wipLimit} card slots used`}
+            >
+              <div
+                className={clsx(
+                  "h-1 rounded-full transition-all",
+                  isOverLimit ? "bg-orange-400" : isAtLimit ? "bg-amber-400" : "bg-[var(--primary-blue)]"
+                )}
+                style={{ width: `${Math.min((cards.length / column.wipLimit) * 100, 100)}%` }}
+              />
+            </div>
+          )}
         </div>
         {onDeleteColumn && (
           <button

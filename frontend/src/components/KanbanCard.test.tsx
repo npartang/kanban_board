@@ -87,6 +87,22 @@ describe("KanbanCard", () => {
     expect(screen.getByText(/overdue/i)).toBeInTheDocument();
   });
 
+  it("shows 'Today' for cards due today", () => {
+    const today = new Date().toISOString().split("T")[0];
+    const todayCard: Card = { ...mockCard, dueDate: today };
+    render(<KanbanCard {...defaultProps} card={todayCard} />);
+    expect(screen.getByText(/today/i)).toBeInTheDocument();
+  });
+
+  it("shows 'Soon' for cards due within a week", () => {
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 3);
+    const soonDate = soon.toISOString().split("T")[0];
+    const soonCard: Card = { ...mockCard, dueDate: soonDate };
+    render(<KanbanCard {...defaultProps} card={soonCard} />);
+    expect(screen.getByText(/soon/i)).toBeInTheDocument();
+  });
+
   it("does not show due date when dueDate is null", () => {
     const noDateCard: Card = { ...mockCard, dueDate: null };
     render(<KanbanCard {...defaultProps} card={noDateCard} />);
