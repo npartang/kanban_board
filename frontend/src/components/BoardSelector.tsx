@@ -82,31 +82,39 @@ export const BoardSelector = ({
                 />
               </form>
             ) : (
-              <button
-                type="button"
-                onClick={() => onSelect(board.id)}
-                onDoubleClick={() => startEdit(board)}
-                title="Click to switch · double-click to rename"
-                className={`rounded-full border px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.15em] transition ${
-                  activeBoardId === board.id
-                    ? "border-[var(--primary-blue)] bg-[var(--primary-blue)] text-white"
-                    : "border-[var(--stroke)] bg-white text-[var(--navy-dark)] hover:border-[var(--primary-blue)]"
-                }`}
-              >
-                {board.name}
-              </button>
-            )}
-
-            {boards.length > 1 && editingId !== board.id && (
-              <button
-                type="button"
-                onClick={() => void onArchive(board.id)}
-                title="Archive board"
-                aria-label={`Archive ${board.name}`}
-                className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[10px] text-white group-hover:flex"
-              >
-                ⌗
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => onSelect(board.id)}
+                  className={`rounded-full border px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.15em] transition ${
+                    activeBoardId === board.id
+                      ? "border-[var(--primary-blue)] bg-[var(--primary-blue)] text-white"
+                      : "border-[var(--stroke)] bg-white text-[var(--navy-dark)] hover:border-[var(--primary-blue)]"
+                  }`}
+                >
+                  {board.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => startEdit(board)}
+                  title="Rename board"
+                  aria-label={`Rename ${board.name}`}
+                  className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-[var(--primary-blue)] text-[10px] text-white group-hover:flex"
+                >
+                  ✎
+                </button>
+                {boards.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => void onArchive(board.id)}
+                    title="Archive board"
+                    aria-label={`Archive ${board.name}`}
+                    className="absolute -right-1.5 -bottom-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[10px] text-white group-hover:flex"
+                  >
+                    ⌗
+                  </button>
+                )}
+              </>
             )}
           </div>
         ))}

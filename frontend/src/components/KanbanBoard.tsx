@@ -281,41 +281,6 @@ export const KanbanBoard = () => {
     );
   };
 
-  const handleSetWipLimit = async (columnId: string, limit: number | null) => {
-    setBoard((prev) =>
-      prev
-        ? {
-            ...prev,
-            columns: prev.columns.map((c) =>
-              c.id === columnId ? { ...c, wipLimit: limit } : c
-            ),
-          }
-        : prev
-    );
-    void apiFetch(`/api/columns/${fromColumnId(columnId)}/wip-limit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wip_limit: limit }),
-    }).catch((err) => console.error("Failed to set WIP limit:", err));
-  };
-
-  const handleDeleteColumn = async (columnId: string) => {
-    const res = await apiFetch(`/api/columns/${fromColumnId(columnId)}`, { method: "DELETE" });
-    if (!res.ok) return;
-    setBoard((prev) => {
-      if (!prev) return prev;
-      const col = prev.columns.find((c) => c.id === columnId);
-      const removedCardIds = new Set(col?.cardIds ?? []);
-      const nextCards = Object.fromEntries(
-        Object.entries(prev.cards).filter(([id]) => !removedCardIds.has(id))
-      );
-      return {
-        ...prev,
-        columns: prev.columns.filter((c) => c.id !== columnId),
-        cards: nextCards,
-      };
-    });
-  };
 
   // ---- DnD ----
 
@@ -862,8 +827,6 @@ export const KanbanBoard = () => {
                       onAddCard={handleAddCard}
                       onDeleteCard={handleDeleteCard}
                       onEditCard={handleEditCard}
-                      onDeleteColumn={handleDeleteColumn}
-                      onSetWipLimit={handleSetWipLimit}
                       isHighlighted={overColumnId === column.id}
                     />
                   ))}

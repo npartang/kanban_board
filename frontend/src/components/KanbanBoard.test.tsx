@@ -137,19 +137,6 @@ describe("KanbanBoard", () => {
     expect(await screen.findByDisplayValue("Sprint 1")).toBeInTheDocument();
   });
 
-  it("deletes a column when confirmed", async () => {
-    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
-    render(<KanbanBoard />);
-    const columns = await screen.findAllByTestId(/column-/i);
-    expect(columns).toHaveLength(5);
-
-    const firstColumn = columns[0];
-    const deleteBtn = within(firstColumn).getByRole("button", { name: /delete column/i });
-    await userEvent.click(deleteBtn);
-
-    const remaining = screen.getAllByTestId(/column-/i);
-    expect(remaining).toHaveLength(4);
-  });
 
   it("adds and removes a card", async () => {
     render(<KanbanBoard />);
