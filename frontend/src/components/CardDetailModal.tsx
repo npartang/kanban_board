@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
-import type { Card, Column, Priority } from "@/lib/kanban";
+import type { Card, CardComment, Column, Priority } from "@/lib/kanban";
 
 export type CardUpdates = {
   title?: string;
@@ -19,6 +19,9 @@ type CardDetailModalProps = {
   onSave: (updates: CardUpdates) => Promise<void>;
   onDelete: () => void;
   onMove: (targetColumnId: string) => void;
+  comments?: CardComment[];
+  onAddComment?: (body: string) => Promise<CardComment>;
+  onDeleteComment?: (id: number) => void;
 };
 
 const PRIORITY_LABELS: Record<Priority, string> = {
@@ -45,6 +48,9 @@ export const CardDetailModal = ({
   onSave,
   onDelete,
   onMove,
+  comments = [],
+  onAddComment,
+  onDeleteComment,
 }: CardDetailModalProps) => {
   const [title, setTitle] = useState(card.title);
   const [details, setDetails] = useState(card.details === "No details yet." ? "" : card.details);
@@ -56,6 +62,8 @@ export const CardDetailModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [commentBody, setCommentBody] = useState("");
+  const [isAddingComment, setIsAddingComment] = useState(false);
 
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -282,6 +290,70 @@ export const CardDetailModal = ({
 
             {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
           </div>
+
+          {/* Comments */}
+          {onAddComment && (
+            <div className="border-t border-[var(--stroke)] px-6 py-5 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)]">
+                Comments {comments.length > 0 && `(${comments.length})`}
+              </p>
+              {comments.length > 0 && (
+                <ul className="space-y-2" aria-label="Comments list">
+                  {comments.map((c) => (
+                    <li key={c.id} className="flex items-start gap-2 group">
+                      <div className="flex-1 rounded-xl border border-[var(--stroke)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--navy-dark)]">
+                        <p className="whitespace-pre-wrap">{c.body}</p>
+                        <p className="mt-1 text-[10px] text-[var(--gray-text)]">
+                          {new Date(c.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                      {onDeleteComment && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteComment(c.id)}
+                          className="mt-1 shrink-0 text-[var(--gray-text)] opacity-0 group-hover:opacity-100 hover:text-red-500 transition"
+                          aria-label={`Delete comment`}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={commentBody}
+                  onChange={(e) => setCommentBody(e.target.value)}
+                  onKeyDown={async (e) => {
+                    if (e.key === "Enter" && commentBody.trim()) {
+                      e.preventDefault();
+                      setIsAddingComment(true);
+                      try { await onAddComment(commentBody.trim()); setCommentBody(""); }
+                      finally { setIsAddingComment(false); }
+                    }
+                  }}
+                  placeholder="Add a comment…"
+                  className="flex-1 rounded-xl border border-[var(--stroke)] bg-white px-3 py-2 text-sm text-[var(--navy-dark)] outline-none transition focus:border-[var(--primary-blue)]"
+                  aria-label="New comment"
+                />
+                <button
+                  type="button"
+                  disabled={!commentBody.trim() || isAddingComment}
+                  onClick={async () => {
+                    if (!commentBody.trim()) return;
+                    setIsAddingComment(true);
+                    try { await onAddComment(commentBody.trim()); setCommentBody(""); }
+                    finally { setIsAddingComment(false); }
+                  }}
+                  className="rounded-xl border border-[var(--stroke)] px-3 py-2 text-xs font-semibold text-[var(--gray-text)] hover:border-[var(--primary-blue)] disabled:opacity-40"
+                >
+                  {isAddingComment ? "…" : "Post"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-[var(--stroke)] px-6 py-4">

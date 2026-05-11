@@ -18,7 +18,7 @@ import { KanbanCardPreview } from "@/components/KanbanCardPreview";
 import { AISidebar } from "@/components/AISidebar";
 import { BoardSelector, type BoardSummary } from "@/components/BoardSelector";
 import { CardDetailModal, type CardUpdates } from "@/components/CardDetailModal";
-import { moveCard, type BoardData, type Priority } from "@/lib/kanban";
+import { moveCard, type BoardData, type CardComment, type Priority } from "@/lib/kanban";
 import { useAuth } from "@/lib/auth-context";
 
 type ApiColumn = { id: number; title: string; position: number; wip_limit: number | null };
@@ -74,6 +74,7 @@ export const KanbanBoard = () => {
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [editingCardComments, setEditingCardComments] = useState<CardComment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
@@ -428,7 +429,16 @@ export const KanbanBoard = () => {
     })();
   };
 
-  const handleEditCard = (cardId: string) => setEditingCardId(cardId);
+  const handleEditCard = (cardId: string) => {
+    setEditingCardId(cardId);
+    setEditingCardComments([]);
+    const numId = fromCardId(cardId);
+    void apiFetch(`/api/cards/${numId}/comments`).then(async (res) => {
+      if (!res.ok) return;
+      const data = (await res.json()) as Array<{ id: number; card_id: number; body: string; created_at: string }>;
+      setEditingCardComments(data.map((c) => ({ id: c.id, cardId: c.card_id, body: c.body, createdAt: c.created_at })));
+    }).catch(() => {});
+  };
 
   const handleSaveCard = useCallback(
     async (updates: CardUpdates) => {
@@ -502,6 +512,34 @@ export const KanbanBoard = () => {
       }).catch((err) => console.error("Failed to move card:", err));
     },
     [editingCardId, board, apiFetch]
+  );
+
+  const handleAddComment = useCallback(
+    async (body: string): Promise<CardComment> => {
+      if (!editingCardId) throw new Error("No card selected");
+      const numId = fromCardId(editingCardId);
+      const res = await apiFetch(`/api/cards/${numId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body }),
+      });
+      if (!res.ok) throw new Error(`Add comment failed: ${res.status}`);
+      const data = (await res.json()) as { id: number; card_id: number; body: string; created_at: string };
+      const comment: CardComment = { id: data.id, cardId: data.card_id, body: data.body, createdAt: data.created_at };
+      setEditingCardComments((prev) => [...prev, comment]);
+      return comment;
+    },
+    [editingCardId, apiFetch]
+  );
+
+  const handleDeleteComment = useCallback(
+    (commentId: number) => {
+      setEditingCardComments((prev) => prev.filter((c) => c.id !== commentId));
+      void apiFetch(`/api/comments/${commentId}`, { method: "DELETE" }).catch((err) =>
+        console.error("Failed to delete comment:", err)
+      );
+    },
+    [apiFetch]
   );
 
   const handleDeleteCard = (columnId: string, cardId: string) => {
@@ -778,6 +816,9 @@ export const KanbanBoard = () => {
               handleDeleteCard(colId, cid);
             }}
             onMove={handleMoveCardFromModal}
+            comments={editingCardComments}
+            onAddComment={handleAddComment}
+            onDeleteComment={handleDeleteComment}
           />
         );
       })()}

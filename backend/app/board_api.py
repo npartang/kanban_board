@@ -99,6 +99,17 @@ class ReorderColumnsRequest(BaseModel):
     column_ids: List[int]
 
 
+class CommentOut(BaseModel):
+    id: int
+    card_id: int
+    body: str
+    created_at: str
+
+
+class CreateCommentRequest(BaseModel):
+    body: str
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -362,6 +373,73 @@ def reorder_columns(
                 "UPDATE columns SET position = ? WHERE id = ?;",
                 (position, column_id),
             )
+        connection.commit()
+
+
+# ---------------------------------------------------------------------------
+# Comment routes
+# ---------------------------------------------------------------------------
+
+@router.get("/api/cards/{card_id}/comments", response_model=List[CommentOut])
+def list_comments(
+    card_id: int,
+    user_id: int = Depends(get_current_user_id),
+) -> List[CommentOut]:
+    with db_connection() as connection:
+        _verify_card_ownership(connection, card_id, user_id)
+        rows = connection.execute(
+            "SELECT id, card_id, body, created_at FROM card_comments WHERE card_id = ? ORDER BY created_at ASC;",
+            (card_id,),
+        ).fetchall()
+    return [
+        CommentOut(id=r["id"], card_id=r["card_id"], body=r["body"], created_at=r["created_at"])
+        for r in rows
+    ]
+
+
+@router.post("/api/cards/{card_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
+def add_comment(
+    card_id: int,
+    payload: CreateCommentRequest,
+    user_id: int = Depends(get_current_user_id),
+) -> CommentOut:
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Comment body cannot be empty")
+    with db_connection() as connection:
+        _verify_card_ownership(connection, card_id, user_id)
+        cursor = connection.execute(
+            "INSERT INTO card_comments (card_id, body) VALUES (?, ?);",
+            (card_id, body),
+        )
+        comment_id = int(cursor.lastrowid)
+        connection.commit()
+        row = connection.execute(
+            "SELECT id, card_id, body, created_at FROM card_comments WHERE id = ?;",
+            (comment_id,),
+        ).fetchone()
+    return CommentOut(id=row["id"], card_id=row["card_id"], body=row["body"], created_at=row["created_at"])
+
+
+@router.delete("/api/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_comment(
+    comment_id: int,
+    user_id: int = Depends(get_current_user_id),
+) -> None:
+    with db_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT cc.id FROM card_comments cc
+            JOIN cards ON cc.card_id = cards.id
+            JOIN columns ON cards.column_id = columns.id
+            JOIN boards ON columns.board_id = boards.id
+            WHERE cc.id = ? AND boards.user_id = ?;
+            """,
+            (comment_id, user_id),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+        connection.execute("DELETE FROM card_comments WHERE id = ?;", (comment_id,))
         connection.commit()
 
 

@@ -667,3 +667,88 @@ def test_wip_limit_cross_user_rejected() -> None:
     login_as("wip_other_user")
     r = client.post(f"/api/columns/{col_id}/wip-limit", json={"wip_limit": 3})
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Card comments
+# ---------------------------------------------------------------------------
+
+def _create_card_for_comments() -> int:
+    login_demo_user()
+    board_detail = client.get("/api/board").json()
+    col_id = board_detail["columns"][0]["id"]
+    return client.post("/api/cards", json={"column_id": col_id, "title": "Comment test card"}).json()["id"]
+
+
+def test_list_comments_empty_initially() -> None:
+    card_id = _create_card_for_comments()
+    r = client.get(f"/api/cards/{card_id}/comments")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_add_comment_returns_created_comment() -> None:
+    card_id = _create_card_for_comments()
+    r = client.post(f"/api/cards/{card_id}/comments", json={"body": "First comment"})
+    assert r.status_code == 201
+    data = r.json()
+    assert data["body"] == "First comment"
+    assert data["card_id"] == card_id
+    assert "id" in data
+    assert "created_at" in data
+
+
+def test_list_comments_returns_added_comments() -> None:
+    card_id = _create_card_for_comments()
+    client.post(f"/api/cards/{card_id}/comments", json={"body": "Alpha"})
+    client.post(f"/api/cards/{card_id}/comments", json={"body": "Beta"})
+    r = client.get(f"/api/cards/{card_id}/comments")
+    assert r.status_code == 200
+    bodies = [c["body"] for c in r.json()]
+    assert "Alpha" in bodies
+    assert "Beta" in bodies
+
+
+def test_add_comment_empty_body_returns_422() -> None:
+    card_id = _create_card_for_comments()
+    r = client.post(f"/api/cards/{card_id}/comments", json={"body": "  "})
+    assert r.status_code == 422
+
+
+def test_delete_comment() -> None:
+    card_id = _create_card_for_comments()
+    comment = client.post(f"/api/cards/{card_id}/comments", json={"body": "To delete"}).json()
+    r = client.delete(f"/api/comments/{comment['id']}")
+    assert r.status_code == 204
+    remaining = client.get(f"/api/cards/{card_id}/comments").json()
+    assert not any(c["id"] == comment["id"] for c in remaining)
+
+
+def test_delete_comment_not_found_returns_404() -> None:
+    login_demo_user()
+    r = client.delete("/api/comments/999999")
+    assert r.status_code == 404
+
+
+def test_comments_require_auth() -> None:
+    client.post("/api/logout")
+    r = client.get("/api/cards/1/comments")
+    assert r.status_code == 401
+
+
+def test_comments_cross_user_rejected() -> None:
+    card_id = _create_card_for_comments()
+    comment = client.post(f"/api/cards/{card_id}/comments", json={"body": "Mine"}).json()
+
+    login_as("comment_other_user")
+    r = client.delete(f"/api/comments/{comment['id']}")
+    assert r.status_code == 404
+
+
+def test_comments_deleted_with_card() -> None:
+    card_id = _create_card_for_comments()
+    client.post(f"/api/cards/{card_id}/comments", json={"body": "Orphan comment"})
+    client.delete(f"/api/cards/{card_id}")
+    login_demo_user()
+    r = client.get(f"/api/cards/{card_id}/comments")
+    assert r.status_code == 404

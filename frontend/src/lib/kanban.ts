@@ -1,5 +1,12 @@
 export type Priority = "low" | "medium" | "high" | "urgent";
 
+export type CardComment = {
+  id: number;
+  cardId: number;
+  body: string;
+  createdAt: string;
+};
+
 export type Card = {
   id: string;
   title: string;

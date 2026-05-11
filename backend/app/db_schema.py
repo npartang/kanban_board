@@ -76,6 +76,19 @@ SCHEMA_STATEMENTS: Iterable[str] = (
   CREATE INDEX IF NOT EXISTS idx_cards_column_position
   ON cards(column_id, position);
   """,
+  """
+  CREATE TABLE IF NOT EXISTS card_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_id INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  );
+  """,
+  """
+  CREATE INDEX IF NOT EXISTS idx_card_comments_card_id
+  ON card_comments(card_id, created_at);
+  """,
 )
 
 _VALID_PRIORITIES = frozenset({"low", "medium", "high", "urgent"})

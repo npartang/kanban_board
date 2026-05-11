@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CardDetailModal } from "./CardDetailModal";
-import type { Card, Column } from "@/lib/kanban";
+import type { Card, CardComment, Column } from "@/lib/kanban";
 
 const mockCard: Card = {
   id: "card-1",
@@ -214,5 +214,93 @@ describe("CardDetailModal", () => {
     render(<CardDetailModal {...defaultProps} />);
     fireEvent.click(screen.getByRole("dialog"));
     expect(defaultProps.onClose).toHaveBeenCalledOnce();
+  });
+
+  describe("comments", () => {
+    const mockComment: CardComment = {
+      id: 1,
+      cardId: 1,
+      body: "This is a comment",
+      createdAt: "2026-05-01T10:00:00",
+    };
+
+    it("does not show comments section when onAddComment is not provided", () => {
+      render(<CardDetailModal {...defaultProps} />);
+      expect(screen.queryByLabelText(/new comment/i)).not.toBeInTheDocument();
+    });
+
+    it("shows comments section when onAddComment is provided", () => {
+      render(<CardDetailModal {...defaultProps} onAddComment={vi.fn()} />);
+      expect(screen.getByLabelText(/new comment/i)).toBeInTheDocument();
+    });
+
+    it("renders existing comments", () => {
+      render(
+        <CardDetailModal
+          {...defaultProps}
+          comments={[mockComment]}
+          onAddComment={vi.fn()}
+        />
+      );
+      expect(screen.getByText("This is a comment")).toBeInTheDocument();
+    });
+
+    it("calls onAddComment when Post button clicked", async () => {
+      const user = userEvent.setup();
+      const onAddComment = vi.fn().mockResolvedValue(mockComment);
+      render(<CardDetailModal {...defaultProps} onAddComment={onAddComment} />);
+      await user.type(screen.getByLabelText(/new comment/i), "Hello world");
+      await user.click(screen.getByRole("button", { name: /post/i }));
+      expect(onAddComment).toHaveBeenCalledWith("Hello world");
+    });
+
+    it("calls onAddComment when Enter is pressed in comment input", async () => {
+      const user = userEvent.setup();
+      const onAddComment = vi.fn().mockResolvedValue(mockComment);
+      render(<CardDetailModal {...defaultProps} onAddComment={onAddComment} />);
+      await user.type(screen.getByLabelText(/new comment/i), "Quick note{Enter}");
+      expect(onAddComment).toHaveBeenCalledWith("Quick note");
+    });
+
+    it("clears comment input after posting", async () => {
+      const user = userEvent.setup();
+      const onAddComment = vi.fn().mockResolvedValue(mockComment);
+      render(<CardDetailModal {...defaultProps} onAddComment={onAddComment} />);
+      const input = screen.getByLabelText(/new comment/i);
+      await user.type(input, "Temp comment");
+      await user.click(screen.getByRole("button", { name: /post/i }));
+      await waitFor(() => expect(input).toHaveValue(""));
+    });
+
+    it("Post button is disabled when input is empty", () => {
+      render(<CardDetailModal {...defaultProps} onAddComment={vi.fn()} />);
+      expect(screen.getByRole("button", { name: /post/i })).toBeDisabled();
+    });
+
+    it("calls onDeleteComment when delete button is clicked", async () => {
+      const user = userEvent.setup();
+      const onDeleteComment = vi.fn();
+      render(
+        <CardDetailModal
+          {...defaultProps}
+          comments={[mockComment]}
+          onAddComment={vi.fn()}
+          onDeleteComment={onDeleteComment}
+        />
+      );
+      await user.click(screen.getByRole("button", { name: /delete comment/i }));
+      expect(onDeleteComment).toHaveBeenCalledWith(1);
+    });
+
+    it("shows comment count in section header", () => {
+      render(
+        <CardDetailModal
+          {...defaultProps}
+          comments={[mockComment]}
+          onAddComment={vi.fn()}
+        />
+      );
+      expect(screen.getByText(/comments \(1\)/i)).toBeInTheDocument();
+    });
   });
 });

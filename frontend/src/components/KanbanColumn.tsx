@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Card, Column } from "@/lib/kanban";
+import type { Card, Column, Priority } from "@/lib/kanban";
 import { KanbanCard } from "@/components/KanbanCard";
 import { NewCardForm } from "@/components/NewCardForm";
 
@@ -41,6 +41,7 @@ export const KanbanColumn = ({
 
   const [editingWip, setEditingWip] = useState(false);
   const [wipInput, setWipInput] = useState("");
+  const [sortMode, setSortMode] = useState<"default" | "priority" | "due-asc" | "due-desc">("default");
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -49,6 +50,31 @@ export const KanbanColumn = ({
 
   const isOverLimit = column.wipLimit !== null && cards.length > column.wipLimit;
   const isAtLimit = column.wipLimit !== null && cards.length === column.wipLimit;
+
+  const PRIORITY_ORDER: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+  const sortedCards = useMemo(() => {
+    if (sortMode === "default") return cards;
+    const sorted = [...cards];
+    if (sortMode === "priority") {
+      sorted.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 2) - (PRIORITY_ORDER[b.priority] ?? 2));
+    } else if (sortMode === "due-asc") {
+      sorted.sort((a, b) => {
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return a.dueDate.localeCompare(b.dueDate);
+      });
+    } else if (sortMode === "due-desc") {
+      sorted.sort((a, b) => {
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return b.dueDate.localeCompare(a.dueDate);
+      });
+    }
+    return sorted;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards, sortMode]);
 
   const commitWipLimit = () => {
     setEditingWip(false);
@@ -93,6 +119,20 @@ export const KanbanColumn = ({
               {column.wipLimit !== null && `/${column.wipLimit}`} cards
               {isOverLimit && " ⚠"}
             </span>
+            {/* Sort control */}
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as typeof sortMode)}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="ml-auto text-[10px] text-[var(--gray-text)] bg-transparent border-0 outline-none cursor-pointer hover:text-[var(--primary-blue)]"
+              aria-label="Sort cards"
+            >
+              <option value="default">Default</option>
+              <option value="priority">Priority ↑</option>
+              <option value="due-asc">Due date ↑</option>
+              <option value="due-desc">Due date ↓</option>
+            </select>
+
             {/* WIP limit editor */}
             {onSetWipLimit && (
               editingWip ? (
@@ -150,7 +190,7 @@ export const KanbanColumn = ({
       </div>
       <div className="mt-4 flex flex-1 flex-col gap-3">
         <SortableContext items={column.cardIds} strategy={verticalListSortingStrategy}>
-          {cards.map((card) => (
+          {sortedCards.map((card) => (
             <KanbanCard
               key={card.id}
               card={card}
