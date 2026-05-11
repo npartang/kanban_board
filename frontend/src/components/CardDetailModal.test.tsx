@@ -14,9 +14,9 @@ const mockCard: Card = {
 };
 
 const mockColumns: Column[] = [
-  { id: "col-1", title: "Backlog", cardIds: ["card-1"] },
-  { id: "col-2", title: "In Progress", cardIds: [] },
-  { id: "col-3", title: "Done", cardIds: [] },
+  { id: "col-1", title: "Backlog", cardIds: ["card-1"], wipLimit: null },
+  { id: "col-2", title: "In Progress", cardIds: [], wipLimit: null },
+  { id: "col-3", title: "Done", cardIds: [], wipLimit: null },
 ];
 
 const defaultProps = {

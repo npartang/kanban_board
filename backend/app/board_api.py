@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.auth import get_current_user_id
@@ -27,6 +27,7 @@ router = APIRouter()
 class BoardSummary(BaseModel):
     id: int
     name: str
+    archived_at: str | None = None
 
 
 class ColumnOut(BaseModel):
@@ -205,10 +206,22 @@ def _verify_card_ownership(connection, card_id: int, user_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 @router.get("/api/boards", response_model=List[BoardSummary])
-def list_boards(user_id: int = Depends(get_current_user_id)) -> List[BoardSummary]:
+def list_boards(
+    archived: bool = Query(default=False),
+    user_id: int = Depends(get_current_user_id),
+) -> List[BoardSummary]:
     with db_connection() as connection:
-        rows = list_boards_for_user(connection, user_id)
-    return [BoardSummary(id=int(r["id"]), name=r["name"]) for r in rows]
+        if archived:
+            rows = connection.execute(
+                "SELECT id, name, archived_at FROM boards WHERE user_id = ? AND archived_at IS NOT NULL ORDER BY archived_at DESC;",
+                (user_id,),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                "SELECT id, name, archived_at FROM boards WHERE user_id = ? AND archived_at IS NULL ORDER BY id ASC;",
+                (user_id,),
+            ).fetchall()
+    return [BoardSummary(id=int(r["id"]), name=r["name"], archived_at=r["archived_at"]) for r in rows]
 
 
 @router.post("/api/boards", response_model=BoardSummary, status_code=status.HTTP_201_CREATED)
@@ -231,7 +244,11 @@ def get_board_by_id(
     user_id: int = Depends(get_current_user_id),
 ) -> BoardOut:
     with db_connection() as connection:
-        if get_board_for_user(connection, board_id, user_id) is None:
+        row = connection.execute(
+            "SELECT id FROM boards WHERE id = ? AND user_id = ? AND archived_at IS NULL;",
+            (board_id, user_id),
+        ).fetchone()
+        if row is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
         return _load_board(connection, board_id, seed=True)
 
@@ -256,12 +273,51 @@ def rename_board(
 
 
 @router.delete("/api/boards/{board_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_board(
+def archive_board(
     board_id: int,
     user_id: int = Depends(get_current_user_id),
 ) -> None:
     with db_connection() as connection:
-        if get_board_for_user(connection, board_id, user_id) is None:
+        row = connection.execute(
+            "SELECT id FROM boards WHERE id = ? AND user_id = ?;",
+            (board_id, user_id),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
+        connection.execute(
+            "UPDATE boards SET archived_at = CURRENT_TIMESTAMP WHERE id = ?;",
+            (board_id,),
+        )
+        connection.commit()
+
+
+@router.post("/api/boards/{board_id}/restore", status_code=status.HTTP_204_NO_CONTENT)
+def restore_board(
+    board_id: int,
+    user_id: int = Depends(get_current_user_id),
+) -> None:
+    with db_connection() as connection:
+        row = connection.execute(
+            "SELECT id FROM boards WHERE id = ? AND user_id = ? AND archived_at IS NOT NULL;",
+            (board_id, user_id),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archived board not found")
+        connection.execute("UPDATE boards SET archived_at = NULL WHERE id = ?;", (board_id,))
+        connection.commit()
+
+
+@router.delete("/api/boards/{board_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
+def permanently_delete_board(
+    board_id: int,
+    user_id: int = Depends(get_current_user_id),
+) -> None:
+    with db_connection() as connection:
+        row = connection.execute(
+            "SELECT id FROM boards WHERE id = ? AND user_id = ?;",
+            (board_id, user_id),
+        ).fetchone()
+        if row is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
         connection.execute("DELETE FROM boards WHERE id = ?;", (board_id,))
         connection.commit()

@@ -101,7 +101,7 @@ def ensure_demo_user(connection: sqlite3.Connection) -> int:
 
 def list_boards_for_user(connection: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
   return connection.execute(
-    "SELECT id, name, created_at, updated_at FROM boards WHERE user_id = ? ORDER BY created_at ASC;",
+    "SELECT id, name, created_at, updated_at FROM boards WHERE user_id = ? AND archived_at IS NULL ORDER BY created_at ASC;",
     (user_id,),
   ).fetchall()
 

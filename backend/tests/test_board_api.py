@@ -173,25 +173,58 @@ def test_delete_board_removes_it() -> None:
     assert all(b["id"] != board_id for b in boards)
 
 
-def test_delete_board_also_removes_columns_and_cards() -> None:
+def test_delete_board_archives_it() -> None:
+    login_demo_user()
+    board = client.post("/api/boards", json={"name": "ToArchive"}).json()
+    board_id = board["id"]
+
+    resp = client.delete(f"/api/boards/{board_id}")
+    assert resp.status_code == 204
+
+    # Board disappears from normal list but appears in archived list
+    boards = client.get("/api/boards").json()
+    assert all(b["id"] != board_id for b in boards)
+    archived = client.get("/api/boards?archived=true").json()
+    assert any(b["id"] == board_id for b in archived)
+
+
+def test_permanently_delete_board_removes_columns_and_cards() -> None:
     login_demo_user()
     board = client.post("/api/boards", json={"name": "ToDelete"}).json()
     board_id = board["id"]
 
-    # Verify it loaded with default columns and seeded cards
     detail = client.get(f"/api/boards/{board_id}").json()
     col_id = detail["columns"][0]["id"]
     card = client.post("/api/cards", json={"column_id": col_id, "title": "orphan"}).json()
 
-    client.delete(f"/api/boards/{board_id}")
+    client.delete(f"/api/boards/{board_id}/permanent")
 
-    # Card and column should no longer be accessible via board list
     boards = client.get("/api/boards").json()
     assert all(b["id"] != board_id for b in boards)
 
-    # Move on another card should 404
     move_resp = client.post(f"/api/cards/{card['id']}/move", json={"target_column_id": col_id, "position": 0})
     assert move_resp.status_code == 404
+
+
+def test_restore_archived_board() -> None:
+    login_demo_user()
+    board = client.post("/api/boards", json={"name": "Restore Me"}).json()
+    board_id = board["id"]
+
+    client.delete(f"/api/boards/{board_id}")
+    assert all(b["id"] != board_id for b in client.get("/api/boards").json())
+
+    r = client.post(f"/api/boards/{board_id}/restore")
+    assert r.status_code == 204
+
+    boards = client.get("/api/boards").json()
+    assert any(b["id"] == board_id for b in boards)
+
+
+def test_restore_nonexistent_archived_board_returns_404() -> None:
+    login_demo_user()
+    r = client.post("/api/boards/999999/restore")
+    assert r.status_code == 404
 
 
 def test_delete_board_owned_by_other_returns_404() -> None:

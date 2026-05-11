@@ -18,7 +18,9 @@ import { KanbanCardPreview } from "@/components/KanbanCardPreview";
 import { AISidebar } from "@/components/AISidebar";
 import { BoardSelector, type BoardSummary } from "@/components/BoardSelector";
 import { CardDetailModal, type CardUpdates } from "@/components/CardDetailModal";
+import { KeyboardShortcutsHelp } from "@/components/KeyboardShortcutsHelp";
 import { moveCard, type BoardData, type CardComment, type Priority } from "@/lib/kanban";
+import { useKeyboardShortcuts, type ShortcutHandler } from "@/lib/useKeyboardShortcuts";
 import { useAuth } from "@/lib/auth-context";
 
 type ApiColumn = { id: number; title: string; position: number; wip_limit: number | null };
@@ -69,6 +71,7 @@ export const KanbanBoard = () => {
   const { onUnauthenticated } = useAuth();
 
   const [boards, setBoards] = useState<BoardSummary[]>([]);
+  const [archivedBoards, setArchivedBoards] = useState<BoardSummary[]>([]);
   const [activeBoardId, setActiveBoardId] = useState<number | null>(null);
   const [board, setBoard] = useState<BoardData | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
@@ -81,7 +84,9 @@ export const KanbanBoard = () => {
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
+  const searchRef = useRef<HTMLInputElement>(null);
   const renameTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   // ---- API helpers ----
@@ -99,10 +104,17 @@ export const KanbanBoard = () => {
 
   const loadBoards = useCallback(async () => {
     try {
-      const res = await apiFetch("/api/boards");
-      if (!res.ok) return;
-      const list = (await res.json()) as BoardSummary[];
+      const [activeRes, archivedRes] = await Promise.all([
+        apiFetch("/api/boards"),
+        apiFetch("/api/boards?archived=true"),
+      ]);
+      if (!activeRes.ok) return;
+      const list = (await activeRes.json()) as BoardSummary[];
       setBoards(list);
+      if (archivedRes.ok) {
+        const archived = (await archivedRes.json()) as BoardSummary[];
+        setArchivedBoards(archived);
+      }
       return list;
     } catch {
       return undefined;
@@ -200,19 +212,30 @@ export const KanbanBoard = () => {
   };
 
   const handleDeleteBoard = async (id: number) => {
-    if (!confirm("Delete this board and all its cards? This cannot be undone.")) return;
     const res = await apiFetch(`/api/boards/${id}`, { method: "DELETE" });
     if (!res.ok) return;
+    const archived = boards.find((b) => b.id === id);
     setBoards((prev) => {
       const next = prev.filter((b) => b.id !== id);
-      if (activeBoardId === id && next.length > 0) {
-        setActiveBoardId(next[0].id);
-      } else if (next.length === 0) {
-        setActiveBoardId(null);
-        setBoard(null);
+      if (activeBoardId === id) {
+        if (next.length > 0) {
+          setActiveBoardId(next[0].id);
+        } else {
+          setActiveBoardId(null);
+          setBoard(null);
+        }
       }
       return next;
     });
+    if (archived) setArchivedBoards((prev) => [...prev, archived]);
+  };
+
+  const handleRestoreBoard = async (id: number) => {
+    const res = await apiFetch(`/api/boards/${id}/restore`, { method: "POST" });
+    if (!res.ok) return;
+    const restored = archivedBoards.find((b) => b.id === id);
+    setArchivedBoards((prev) => prev.filter((b) => b.id !== id));
+    if (restored) setBoards((prev) => [...prev, restored]);
   };
 
   const handleRenameBoard = async (id: number, name: string) => {
@@ -585,11 +608,24 @@ export const KanbanBoard = () => {
     );
   }, [board, searchQuery]);
 
+  const shortcuts: ShortcutHandler[] = useMemo(() => [
+    { key: "?", description: "Show keyboard shortcuts", handler: () => setShowShortcuts((v) => !v) },
+    { key: "/", description: "Focus search", handler: () => searchRef.current?.focus() },
+    { key: "c", description: "Add column", handler: () => { if (!editingCardId) { setAddingColumn(true); setNewColumnTitle(""); } } },
+    { key: "Escape", description: "Close overlay", handler: () => { setShowShortcuts(false); } },
+  ], [editingCardId]);
+
+  useKeyboardShortcuts(shortcuts, !editingCardId || showShortcuts);
+
   const activeCard = activeCardId ? cardsById[activeCardId] : null;
   const activeBoard = boards.find((b) => b.id === activeBoardId);
 
   return (
     <div className="relative overflow-hidden">
+      {showShortcuts && (
+        <KeyboardShortcutsHelp shortcuts={shortcuts} onClose={() => setShowShortcuts(false)} />
+      )}
+
       <div className="pointer-events-none absolute left-0 top-0 h-[420px] w-[420px] -translate-x-1/3 -translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(32,157,215,0.25)_0%,_rgba(32,157,215,0.05)_55%,_transparent_70%)]" />
       <div className="pointer-events-none absolute bottom-0 right-0 h-[520px] w-[520px] translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(117,57,145,0.18)_0%,_rgba(117,57,145,0.05)_55%,_transparent_75%)]" />
 
@@ -608,7 +644,16 @@ export const KanbanBoard = () => {
                 board tab to rename it.
               </p>
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-start gap-3">
+              <button
+                type="button"
+                onClick={() => setShowShortcuts(true)}
+                className="rounded-full border border-[var(--stroke)] px-3 py-1.5 text-xs font-semibold text-[var(--gray-text)] hover:border-[var(--primary-blue)] hover:text-[var(--primary-blue)]"
+                title="Keyboard shortcuts (?)"
+                aria-label="Show keyboard shortcuts"
+              >
+                ?
+              </button>
               <div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-5 py-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-text)]">
                   Boards
@@ -654,16 +699,19 @@ export const KanbanBoard = () => {
 
           <BoardSelector
             boards={boards}
+            archivedBoards={archivedBoards}
             activeBoardId={activeBoardId}
             onSelect={handleSelectBoard}
             onCreate={handleCreateBoard}
-            onDelete={handleDeleteBoard}
+            onArchive={handleDeleteBoard}
             onRename={handleRenameBoard}
+            onRestore={handleRestoreBoard}
           />
 
           {board && (
             <div className="relative max-w-sm">
               <input
+                ref={searchRef}
                 type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
