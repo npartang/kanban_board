@@ -4,9 +4,10 @@ const initialFormState = { title: "", details: "" };
 
 type NewCardFormProps = {
   onAdd: (title: string, details: string) => void;
+  disabled?: boolean;
 };
 
-export const NewCardForm = ({ onAdd }: NewCardFormProps) => {
+export const NewCardForm = ({ onAdd, disabled }: NewCardFormProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [formState, setFormState] = useState(initialFormState);
 
@@ -64,8 +65,10 @@ export const NewCardForm = ({ onAdd }: NewCardFormProps) => {
       ) : (
         <button
           type="button"
-          onClick={() => setIsOpen(true)}
-          className="w-full rounded-full border border-dashed border-[var(--stroke)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--primary-blue)] transition hover:border-[var(--primary-blue)]"
+          onClick={() => !disabled && setIsOpen(true)}
+          disabled={disabled}
+          className="w-full rounded-full border border-dashed border-[var(--stroke)] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--primary-blue)] transition hover:border-[var(--primary-blue)] disabled:cursor-not-allowed disabled:opacity-40"
+          title={disabled ? "WIP limit reached" : undefined}
         >
           Add a card
         </button>

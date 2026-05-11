@@ -620,3 +620,50 @@ def test_reorder_columns_requires_auth() -> None:
     client.post("/api/logout")
     r = client.post("/api/boards/1/reorder-columns", json={"column_ids": [1, 2]})
     assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# WIP limits
+# ---------------------------------------------------------------------------
+
+def test_set_wip_limit_on_column() -> None:
+    login_demo_user()
+    board_detail = client.get("/api/board").json()
+    col_id = board_detail["columns"][0]["id"]
+
+    r = client.post(f"/api/columns/{col_id}/wip-limit", json={"wip_limit": 3})
+    assert r.status_code == 204
+
+    new_board = client.get("/api/board").json()
+    col = next(c for c in new_board["columns"] if c["id"] == col_id)
+    assert col["wip_limit"] == 3
+
+
+def test_clear_wip_limit() -> None:
+    login_demo_user()
+    board_detail = client.get("/api/board").json()
+    col_id = board_detail["columns"][0]["id"]
+
+    client.post(f"/api/columns/{col_id}/wip-limit", json={"wip_limit": 5})
+    r = client.post(f"/api/columns/{col_id}/wip-limit", json={"wip_limit": None})
+    assert r.status_code == 204
+
+    new_board = client.get("/api/board").json()
+    col = next(c for c in new_board["columns"] if c["id"] == col_id)
+    assert col["wip_limit"] is None
+
+
+def test_wip_limit_requires_auth() -> None:
+    client.post("/api/logout")
+    r = client.post("/api/columns/1/wip-limit", json={"wip_limit": 3})
+    assert r.status_code == 401
+
+
+def test_wip_limit_cross_user_rejected() -> None:
+    login_as("wip_user")
+    board_detail = client.get("/api/board").json()
+    col_id = board_detail["columns"][0]["id"]
+
+    login_as("wip_other_user")
+    r = client.post(f"/api/columns/{col_id}/wip-limit", json={"wip_limit": 3})
+    assert r.status_code == 404

@@ -21,7 +21,7 @@ import { CardDetailModal, type CardUpdates } from "@/components/CardDetailModal"
 import { moveCard, type BoardData, type Priority } from "@/lib/kanban";
 import { useAuth } from "@/lib/auth-context";
 
-type ApiColumn = { id: number; title: string; position: number };
+type ApiColumn = { id: number; title: string; position: number; wip_limit: number | null };
 type ApiCard = { id: number; column_id: number; title: string; details: string | null; priority: string; due_date: string | null; labels: string[]; position: number };
 type ApiBoard = { id: number; name: string; columns: ApiColumn[]; cards: ApiCard[] };
 
@@ -48,6 +48,7 @@ const toBoardData = (apiBoard: ApiBoard): BoardData => {
     cardIds: (cardsByColumn[column.id] ?? [])
       .sort((a, b) => a.position - b.position)
       .map((card) => toCardId(card.id)),
+    wipLimit: column.wip_limit ?? null,
   }));
   const cards: BoardData["cards"] = {};
   for (const card of apiBoard.cards) {
@@ -251,6 +252,24 @@ export const KanbanBoard = () => {
           }
         : prev
     );
+  };
+
+  const handleSetWipLimit = async (columnId: string, limit: number | null) => {
+    setBoard((prev) =>
+      prev
+        ? {
+            ...prev,
+            columns: prev.columns.map((c) =>
+              c.id === columnId ? { ...c, wipLimit: limit } : c
+            ),
+          }
+        : prev
+    );
+    void apiFetch(`/api/columns/${fromColumnId(columnId)}/wip-limit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wip_limit: limit }),
+    }).catch((err) => console.error("Failed to set WIP limit:", err));
   };
 
   const handleDeleteColumn = async (columnId: string) => {
@@ -502,6 +521,17 @@ export const KanbanBoard = () => {
     );
   };
 
+  const boardStats = useMemo(() => {
+    if (!board) return null;
+    const today = new Date().toISOString().split("T")[0];
+    const allCards = Object.values(board.cards);
+    const total = allCards.length;
+    const overdue = allCards.filter((c) => c.dueDate && c.dueDate < today).length;
+    const byPriority = { urgent: 0, high: 0, medium: 0, low: 0 };
+    for (const c of allCards) byPriority[c.priority] = (byPriority[c.priority] ?? 0) + 1;
+    return { total, overdue, byPriority };
+  }, [board]);
+
   const filteredCardIds = useMemo(() => {
     if (!board || !searchQuery.trim()) return null;
     const q = searchQuery.toLowerCase();
@@ -540,13 +570,47 @@ export const KanbanBoard = () => {
                 board tab to rename it.
               </p>
             </div>
-            <div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-5 py-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-text)]">
-                Boards
-              </p>
-              <p className="mt-1 text-lg font-semibold text-[var(--primary-blue)]">
-                {boards.length} {boards.length === 1 ? "board" : "boards"}
-              </p>
+            <div className="flex flex-wrap gap-3">
+              <div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-5 py-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-text)]">
+                  Boards
+                </p>
+                <p className="mt-1 text-lg font-semibold text-[var(--primary-blue)]">
+                  {boards.length}
+                </p>
+              </div>
+              {boardStats && (
+                <>
+                  <div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-5 py-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-text)]">
+                      Cards
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-[var(--navy-dark)]">
+                      {boardStats.total}
+                    </p>
+                  </div>
+                  {boardStats.overdue > 0 && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-red-500">
+                        Overdue
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-red-600">
+                        {boardStats.overdue}
+                      </p>
+                    </div>
+                  )}
+                  {boardStats.byPriority.urgent > 0 && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-red-400">
+                        Urgent
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-red-700">
+                        {boardStats.byPriority.urgent}
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
 
@@ -618,6 +682,7 @@ export const KanbanBoard = () => {
                       onDeleteCard={handleDeleteCard}
                       onEditCard={handleEditCard}
                       onDeleteColumn={handleDeleteColumn}
+                      onSetWipLimit={handleSetWipLimit}
                       isHighlighted={overColumnId === column.id}
                     />
                   ))}

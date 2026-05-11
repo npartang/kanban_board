@@ -33,6 +33,7 @@ class ColumnOut(BaseModel):
     id: int
     title: str
     position: int
+    wip_limit: int | None = None
 
 
 VALID_PRIORITIES = frozenset({"low", "medium", "high", "urgent"})
@@ -62,6 +63,10 @@ class RenameBoardRequest(BaseModel):
 
 class RenameColumnRequest(BaseModel):
     title: str
+
+
+class SetWipLimitRequest(BaseModel):
+    wip_limit: int | None = None
 
 
 class CreateColumnRequest(BaseModel):
@@ -107,7 +112,7 @@ def _load_board(connection, board_id: int, seed: bool = False) -> BoardOut:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Board not found")
 
     column_rows = connection.execute(
-        "SELECT id, title, position FROM columns WHERE board_id = ? ORDER BY position ASC;",
+        "SELECT id, title, position, wip_limit FROM columns WHERE board_id = ? ORDER BY position ASC;",
         (board_id,),
     ).fetchall()
 
@@ -128,7 +133,7 @@ def _load_board(connection, board_id: int, seed: bool = False) -> BoardOut:
         id=board_row["id"],
         name=board_row["name"],
         columns=[
-            ColumnOut(id=r["id"], title=r["title"], position=r["position"])
+            ColumnOut(id=r["id"], title=r["title"], position=r["position"], wip_limit=r["wip_limit"])
             for r in column_rows
         ],
         cards=[
@@ -290,10 +295,10 @@ def create_column(
         connection.commit()
 
         row = connection.execute(
-            "SELECT id, title, position FROM columns WHERE id = ?;", (col_id,)
+            "SELECT id, title, position, wip_limit FROM columns WHERE id = ?;", (col_id,)
         ).fetchone()
 
-    return ColumnOut(id=row["id"], title=row["title"], position=row["position"])
+    return ColumnOut(id=row["id"], title=row["title"], position=row["position"], wip_limit=row["wip_limit"])
 
 
 @router.post("/api/columns/{column_id}/rename", status_code=status.HTTP_204_NO_CONTENT)
@@ -316,6 +321,21 @@ def delete_column(
     with db_connection() as connection:
         _verify_column_ownership(connection, column_id, user_id)
         connection.execute("DELETE FROM columns WHERE id = ?;", (column_id,))
+        connection.commit()
+
+
+@router.post("/api/columns/{column_id}/wip-limit", status_code=status.HTTP_204_NO_CONTENT)
+def set_wip_limit(
+    column_id: int,
+    payload: SetWipLimitRequest,
+    user_id: int = Depends(get_current_user_id),
+) -> None:
+    with db_connection() as connection:
+        _verify_column_ownership(connection, column_id, user_id)
+        connection.execute(
+            "UPDATE columns SET wip_limit = ? WHERE id = ?;",
+            (payload.wip_limit, column_id),
+        )
         connection.commit()
 
 

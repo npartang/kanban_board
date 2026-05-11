@@ -16,6 +16,7 @@ _COLUMN_ADDITIONS: tuple[tuple[str, str, str], ...] = (
   ("cards", "priority", "TEXT NOT NULL DEFAULT 'medium'"),
   ("cards", "due_date", "TEXT"),
   ("cards", "labels", "TEXT NOT NULL DEFAULT '[]'"),
+  ("columns", "wip_limit", "INTEGER"),
 )
 
 SCHEMA_STATEMENTS: Iterable[str] = (

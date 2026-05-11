@@ -1,3 +1,4 @@
+import { useState } from "react";
 import clsx from "clsx";
 import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -13,6 +14,7 @@ type KanbanColumnProps = {
   onDeleteCard: (columnId: string, cardId: string) => void;
   onEditCard?: (cardId: string) => void;
   onDeleteColumn?: (columnId: string) => void;
+  onSetWipLimit?: (columnId: string, limit: number | null) => void;
   isHighlighted?: boolean;
 };
 
@@ -24,6 +26,7 @@ export const KanbanColumn = ({
   onDeleteCard,
   onEditCard,
   onDeleteColumn,
+  onSetWipLimit,
   isHighlighted,
 }: KanbanColumnProps) => {
   const {
@@ -36,9 +39,26 @@ export const KanbanColumn = ({
     isOver,
   } = useSortable({ id: column.id });
 
+  const [editingWip, setEditingWip] = useState(false);
+  const [wipInput, setWipInput] = useState("");
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+  };
+
+  const isOverLimit = column.wipLimit !== null && cards.length > column.wipLimit;
+  const isAtLimit = column.wipLimit !== null && cards.length === column.wipLimit;
+
+  const commitWipLimit = () => {
+    setEditingWip(false);
+    if (!onSetWipLimit) return;
+    const parsed = parseInt(wipInput, 10);
+    if (wipInput.trim() === "" || isNaN(parsed) || parsed < 1) {
+      onSetWipLimit(column.id, null);
+    } else {
+      onSetWipLimit(column.id, parsed);
+    }
   };
 
   return (
@@ -48,6 +68,7 @@ export const KanbanColumn = ({
       className={clsx(
         "flex min-h-[520px] flex-col rounded-3xl border border-[var(--stroke)] bg-[var(--surface-strong)] p-4 shadow-[var(--shadow)] transition",
         (isOver || isHighlighted) && "ring-2 ring-[var(--accent-yellow)]",
+        isOverLimit && "border-orange-300",
         isDragging && "opacity-60"
       )}
       data-testid={`column-${column.id}`}
@@ -62,9 +83,47 @@ export const KanbanColumn = ({
               className="h-2 w-10 cursor-grab rounded-full bg-[var(--accent-yellow)] active:cursor-grabbing"
               aria-label="Drag to reorder column"
             />
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)]">
-              {cards.length} cards
+            <span
+              className={clsx(
+                "text-xs font-semibold uppercase tracking-[0.2em]",
+                isOverLimit ? "text-orange-500" : "text-[var(--gray-text)]"
+              )}
+            >
+              {cards.length}
+              {column.wipLimit !== null && `/${column.wipLimit}`} cards
+              {isOverLimit && " ⚠"}
             </span>
+            {/* WIP limit editor */}
+            {onSetWipLimit && (
+              editingWip ? (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); commitWipLimit(); }}
+                  className="flex items-center gap-1"
+                >
+                  <input
+                    autoFocus
+                    type="number"
+                    min={1}
+                    value={wipInput}
+                    onChange={(e) => setWipInput(e.target.value)}
+                    onBlur={commitWipLimit}
+                    placeholder="∞"
+                    className="w-12 rounded border border-[var(--stroke)] px-1 py-0.5 text-[11px] text-[var(--navy-dark)] outline-none focus:border-[var(--primary-blue)]"
+                    aria-label="WIP limit"
+                  />
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => { setWipInput(column.wipLimit !== null ? String(column.wipLimit) : ""); setEditingWip(true); }}
+                  className="text-[10px] text-[var(--gray-text)] underline hover:text-[var(--primary-blue)]"
+                  aria-label="Set WIP limit"
+                >
+                  {column.wipLimit !== null ? "WIP" : "set limit"}
+                </button>
+              )
+            )}
           </div>
           <input
             value={column.title}
@@ -108,6 +167,7 @@ export const KanbanColumn = ({
       </div>
       <NewCardForm
         onAdd={(title, details) => onAddCard(column.id, title, details)}
+        disabled={isAtLimit || isOverLimit}
       />
     </section>
   );

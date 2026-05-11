@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CardDetailModal, type CardUpdates } from "./CardDetailModal";
+import { CardDetailModal } from "./CardDetailModal";
 import type { Card, Column } from "@/lib/kanban";
 
 const mockCard: Card = {
