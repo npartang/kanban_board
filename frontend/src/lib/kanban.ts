@@ -7,6 +7,14 @@ export type CardComment = {
   createdAt: string;
 };
 
+export type ChecklistItem = {
+  id: number;
+  cardId: number;
+  text: string;
+  isChecked: boolean;
+  position: number;
+};
+
 export type Card = {
   id: string;
   title: string;
@@ -14,6 +22,8 @@ export type Card = {
   priority: Priority;
   dueDate: string | null;
   labels: string[];
+  checklistTotal: number;
+  checklistDone: number;
 };
 
 export type Column = {

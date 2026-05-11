@@ -19,12 +19,12 @@ import { AISidebar } from "@/components/AISidebar";
 import { BoardSelector, type BoardSummary } from "@/components/BoardSelector";
 import { CardDetailModal, type CardUpdates } from "@/components/CardDetailModal";
 import { KeyboardShortcutsHelp } from "@/components/KeyboardShortcutsHelp";
-import { moveCard, type BoardData, type CardComment, type Priority } from "@/lib/kanban";
+import { moveCard, type BoardData, type CardComment, type ChecklistItem, type Priority } from "@/lib/kanban";
 import { useKeyboardShortcuts, type ShortcutHandler } from "@/lib/useKeyboardShortcuts";
 import { useAuth } from "@/lib/auth-context";
 
 type ApiColumn = { id: number; title: string; position: number; wip_limit: number | null };
-type ApiCard = { id: number; column_id: number; title: string; details: string | null; priority: string; due_date: string | null; labels: string[]; position: number };
+type ApiCard = { id: number; column_id: number; title: string; details: string | null; priority: string; due_date: string | null; labels: string[]; position: number; checklist_total?: number; checklist_done?: number };
 type ApiBoard = { id: number; name: string; columns: ApiColumn[]; cards: ApiCard[] };
 
 const toColumnId = (dbId: number) => `col-${dbId}`;
@@ -62,6 +62,8 @@ const toBoardData = (apiBoard: ApiBoard): BoardData => {
       priority: (card.priority || "medium") as Priority,
       dueDate: card.due_date,
       labels: card.labels ?? [],
+      checklistTotal: card.checklist_total ?? 0,
+      checklistDone: card.checklist_done ?? 0,
     };
   }
   return { columns, cards };
@@ -78,6 +80,7 @@ export const KanbanBoard = () => {
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [editingCardComments, setEditingCardComments] = useState<CardComment[]>([]);
+  const [editingCardChecklist, setEditingCardChecklist] = useState<ChecklistItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
@@ -271,7 +274,7 @@ export const KanbanBoard = () => {
             ...prev,
             columns: [
               ...prev.columns,
-              { id: toColumnId(col.id), title: col.title, cardIds: [] },
+              { id: toColumnId(col.id), title: col.title, cardIds: [], wipLimit: null },
             ],
           }
         : prev
@@ -438,6 +441,8 @@ export const KanbanBoard = () => {
                     priority: (json.priority || "medium") as Priority,
                     dueDate: json.due_date,
                     labels: json.labels ?? [],
+                    checklistTotal: 0,
+                    checklistDone: 0,
                   },
                 },
                 columns: prev.columns.map((c) =>
@@ -455,12 +460,20 @@ export const KanbanBoard = () => {
   const handleEditCard = (cardId: string) => {
     setEditingCardId(cardId);
     setEditingCardComments([]);
+    setEditingCardChecklist([]);
     const numId = fromCardId(cardId);
-    void apiFetch(`/api/cards/${numId}/comments`).then(async (res) => {
-      if (!res.ok) return;
-      const data = (await res.json()) as Array<{ id: number; card_id: number; body: string; created_at: string }>;
-      setEditingCardComments(data.map((c) => ({ id: c.id, cardId: c.card_id, body: c.body, createdAt: c.created_at })));
-    }).catch(() => {});
+    void Promise.all([
+      apiFetch(`/api/cards/${numId}/comments`).then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as Array<{ id: number; card_id: number; body: string; created_at: string }>;
+        setEditingCardComments(data.map((c) => ({ id: c.id, cardId: c.card_id, body: c.body, createdAt: c.created_at })));
+      }),
+      apiFetch(`/api/cards/${numId}/checklist`).then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as Array<{ id: number; card_id: number; text: string; is_checked: boolean; position: number }>;
+        setEditingCardChecklist(data.map((i) => ({ id: i.id, cardId: i.card_id, text: i.text, isChecked: i.is_checked, position: i.position })));
+      }),
+    ]).catch(() => {});
   };
 
   const handleSaveCard = useCallback(
@@ -496,6 +509,8 @@ export const KanbanBoard = () => {
                   priority: (updated.priority || "medium") as Priority,
                   dueDate: updated.due_date,
                   labels: updated.labels ?? [],
+                  checklistTotal: prev.cards[cid]?.checklistTotal ?? 0,
+                  checklistDone: prev.cards[cid]?.checklistDone ?? 0,
                 },
               },
             }
@@ -563,6 +578,86 @@ export const KanbanBoard = () => {
       );
     },
     [apiFetch]
+  );
+
+  const handleAddChecklistItem = useCallback(
+    async (text: string): Promise<ChecklistItem> => {
+      if (!editingCardId) throw new Error("No card selected");
+      const numId = fromCardId(editingCardId);
+      const res = await apiFetch(`/api/cards/${numId}/checklist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error(`Add checklist item failed: ${res.status}`);
+      const data = (await res.json()) as { id: number; card_id: number; text: string; is_checked: boolean; position: number };
+      const item: ChecklistItem = { id: data.id, cardId: data.card_id, text: data.text, isChecked: data.is_checked, position: data.position };
+      setEditingCardChecklist((prev) => [...prev, item]);
+      setBoard((prev) => {
+        if (!prev || !editingCardId) return prev;
+        return {
+          ...prev,
+          cards: {
+            ...prev.cards,
+            [editingCardId]: { ...prev.cards[editingCardId], checklistTotal: (prev.cards[editingCardId]?.checklistTotal ?? 0) + 1 },
+          },
+        };
+      });
+      return item;
+    },
+    [editingCardId, apiFetch]
+  );
+
+  const handleToggleChecklistItem = useCallback(
+    (itemId: number, isChecked: boolean) => {
+      setEditingCardChecklist((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, isChecked } : i))
+      );
+      setBoard((prev) => {
+        if (!prev || !editingCardId) return prev;
+        const card = prev.cards[editingCardId];
+        if (!card) return prev;
+        const delta = isChecked ? 1 : -1;
+        return {
+          ...prev,
+          cards: { ...prev.cards, [editingCardId]: { ...card, checklistDone: Math.max(0, (card.checklistDone ?? 0) + delta) } },
+        };
+      });
+      void apiFetch(`/api/checklist/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_checked: isChecked }),
+      }).catch((err) => console.error("Failed to toggle checklist item:", err));
+    },
+    [editingCardId, apiFetch]
+  );
+
+  const handleDeleteChecklistItem = useCallback(
+    (itemId: number) => {
+      const item = editingCardChecklist.find((i) => i.id === itemId);
+      setEditingCardChecklist((prev) => prev.filter((i) => i.id !== itemId));
+      setBoard((prev) => {
+        if (!prev || !editingCardId) return prev;
+        const card = prev.cards[editingCardId];
+        if (!card) return prev;
+        const doneDelta = item?.isChecked ? -1 : 0;
+        return {
+          ...prev,
+          cards: {
+            ...prev.cards,
+            [editingCardId]: {
+              ...card,
+              checklistTotal: Math.max(0, (card.checklistTotal ?? 0) - 1),
+              checklistDone: Math.max(0, (card.checklistDone ?? 0) + doneDelta),
+            },
+          },
+        };
+      });
+      void apiFetch(`/api/checklist/${itemId}`, { method: "DELETE" }).catch((err) =>
+        console.error("Failed to delete checklist item:", err)
+      );
+    },
+    [editingCardId, editingCardChecklist, apiFetch]
   );
 
   const handleDeleteCard = (columnId: string, cardId: string) => {
@@ -867,6 +962,10 @@ export const KanbanBoard = () => {
             comments={editingCardComments}
             onAddComment={handleAddComment}
             onDeleteComment={handleDeleteComment}
+            checklist={editingCardChecklist}
+            onAddChecklistItem={handleAddChecklistItem}
+            onToggleChecklistItem={handleToggleChecklistItem}
+            onDeleteChecklistItem={handleDeleteChecklistItem}
           />
         );
       })()}

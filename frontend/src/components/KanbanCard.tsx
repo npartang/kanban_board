@@ -93,6 +93,18 @@ export const KanbanCard = ({ card, onDelete, onEdit }: KanbanCardProps) => {
                 {isOverdue ? `Overdue · ${formattedDate}` : isDueToday ? `Today · ${formattedDate}` : isDueSoon ? `Soon · ${formattedDate}` : `Due ${formattedDate}`}
               </span>
             )}
+            {card.checklistTotal > 0 && (
+              <span
+                className={clsx(
+                  "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                  card.checklistDone === card.checklistTotal
+                    ? "bg-green-50 text-green-700"
+                    : "bg-[var(--surface)] text-[var(--gray-text)] border border-[var(--stroke)]"
+                )}
+              >
+                ✓ {card.checklistDone}/{card.checklistTotal}
+              </span>
+            )}
             {card.labels.map((label) => (
               <span
                 key={label}

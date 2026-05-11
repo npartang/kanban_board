@@ -90,6 +90,21 @@ SCHEMA_STATEMENTS: Iterable[str] = (
   CREATE INDEX IF NOT EXISTS idx_card_comments_card_id
   ON card_comments(card_id, created_at);
   """,
+  """
+  CREATE TABLE IF NOT EXISTS card_checklist_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_id INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    is_checked INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  );
+  """,
+  """
+  CREATE INDEX IF NOT EXISTS idx_checklist_card_position
+  ON card_checklist_items(card_id, position);
+  """,
 )
 
 _VALID_PRIORITIES = frozenset({"low", "medium", "high", "urgent"})

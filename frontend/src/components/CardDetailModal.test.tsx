@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CardDetailModal } from "./CardDetailModal";
-import type { Card, CardComment, Column } from "@/lib/kanban";
+import type { Card, CardComment, ChecklistItem, Column } from "@/lib/kanban";
 
 const mockCard: Card = {
   id: "card-1",
@@ -11,6 +11,8 @@ const mockCard: Card = {
   priority: "medium",
   dueDate: "2026-06-15",
   labels: [],
+  checklistTotal: 0,
+  checklistDone: 0,
 };
 
 const mockColumns: Column[] = [
@@ -301,6 +303,108 @@ describe("CardDetailModal", () => {
         />
       );
       expect(screen.getByText(/comments \(1\)/i)).toBeInTheDocument();
+    });
+  });
+
+  describe("checklist", () => {
+    const mockItem: ChecklistItem = {
+      id: 1,
+      cardId: 1,
+      text: "Write tests",
+      isChecked: false,
+      position: 0,
+    };
+
+    it("does not show checklist section when onAddChecklistItem is not provided", () => {
+      render(<CardDetailModal {...defaultProps} />);
+      expect(screen.queryByLabelText(/new checklist item/i)).not.toBeInTheDocument();
+    });
+
+    it("shows checklist section when onAddChecklistItem is provided", () => {
+      render(<CardDetailModal {...defaultProps} onAddChecklistItem={vi.fn()} />);
+      expect(screen.getByLabelText(/new checklist item/i)).toBeInTheDocument();
+    });
+
+    it("renders existing checklist items", () => {
+      render(
+        <CardDetailModal
+          {...defaultProps}
+          checklist={[mockItem]}
+          onAddChecklistItem={vi.fn()}
+        />
+      );
+      expect(screen.getByLabelText("Write tests")).toBeInTheDocument();
+    });
+
+    it("calls onAddChecklistItem when Add button clicked", async () => {
+      const user = userEvent.setup();
+      const onAdd = vi.fn().mockResolvedValue(mockItem);
+      render(<CardDetailModal {...defaultProps} onAddChecklistItem={onAdd} />);
+      await user.type(screen.getByLabelText(/new checklist item/i), "New task");
+      await user.click(screen.getByRole("button", { name: /add checklist item/i }));
+      expect(onAdd).toHaveBeenCalledWith("New task");
+    });
+
+    it("calls onAddChecklistItem when Enter pressed", async () => {
+      const user = userEvent.setup();
+      const onAdd = vi.fn().mockResolvedValue(mockItem);
+      render(<CardDetailModal {...defaultProps} onAddChecklistItem={onAdd} />);
+      await user.type(screen.getByLabelText(/new checklist item/i), "Quick task{Enter}");
+      expect(onAdd).toHaveBeenCalledWith("Quick task");
+    });
+
+    it("calls onToggleChecklistItem when checkbox is clicked", async () => {
+      const user = userEvent.setup();
+      const onToggle = vi.fn();
+      render(
+        <CardDetailModal
+          {...defaultProps}
+          checklist={[mockItem]}
+          onAddChecklistItem={vi.fn()}
+          onToggleChecklistItem={onToggle}
+        />
+      );
+      await user.click(screen.getByRole("checkbox", { name: "Write tests" }));
+      expect(onToggle).toHaveBeenCalledWith(1, true);
+    });
+
+    it("calls onDeleteChecklistItem when delete clicked", async () => {
+      const user = userEvent.setup();
+      const onDelete = vi.fn();
+      render(
+        <CardDetailModal
+          {...defaultProps}
+          checklist={[mockItem]}
+          onAddChecklistItem={vi.fn()}
+          onDeleteChecklistItem={onDelete}
+        />
+      );
+      await user.click(screen.getByRole("button", { name: /delete checklist item write tests/i }));
+      expect(onDelete).toHaveBeenCalledWith(1);
+    });
+
+    it("shows progress bar when checklist has items", () => {
+      const checkedItem: ChecklistItem = { ...mockItem, id: 2, isChecked: true };
+      render(
+        <CardDetailModal
+          {...defaultProps}
+          checklist={[mockItem, checkedItem]}
+          onAddChecklistItem={vi.fn()}
+        />
+      );
+      expect(screen.getByRole("progressbar", { name: /checklist progress/i })).toBeInTheDocument();
+    });
+
+    it("shows checklist count (done/total)", () => {
+      const checkedItem: ChecklistItem = { ...mockItem, id: 2, isChecked: true };
+      render(
+        <CardDetailModal
+          {...defaultProps}
+          checklist={[mockItem, checkedItem]}
+          onAddChecklistItem={vi.fn()}
+        />
+      );
+      expect(screen.getByText(/1\/2/)).toBeInTheDocument();
     });
   });
 });

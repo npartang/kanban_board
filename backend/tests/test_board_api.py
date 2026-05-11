@@ -785,3 +785,120 @@ def test_comments_deleted_with_card() -> None:
     login_demo_user()
     r = client.get(f"/api/cards/{card_id}/comments")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Card checklists
+# ---------------------------------------------------------------------------
+
+def _create_card_for_checklist() -> int:
+    login_demo_user()
+    board = client.get("/api/board").json()
+    col_id = board["columns"][0]["id"]
+    return client.post("/api/cards", json={"column_id": col_id, "title": "Checklist test"}).json()["id"]
+
+
+def test_list_checklist_empty_initially() -> None:
+    card_id = _create_card_for_checklist()
+    r = client.get(f"/api/cards/{card_id}/checklist")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_add_checklist_item_returns_201() -> None:
+    card_id = _create_card_for_checklist()
+    r = client.post(f"/api/cards/{card_id}/checklist", json={"text": "Step one"})
+    assert r.status_code == 201
+    data = r.json()
+    assert data["text"] == "Step one"
+    assert data["is_checked"] is False
+    assert data["card_id"] == card_id
+
+
+def test_list_checklist_after_adding_items() -> None:
+    card_id = _create_card_for_checklist()
+    client.post(f"/api/cards/{card_id}/checklist", json={"text": "Alpha"})
+    client.post(f"/api/cards/{card_id}/checklist", json={"text": "Beta"})
+    items = client.get(f"/api/cards/{card_id}/checklist").json()
+    texts = [i["text"] for i in items]
+    assert "Alpha" in texts
+    assert "Beta" in texts
+
+
+def test_add_checklist_item_empty_text_returns_422() -> None:
+    card_id = _create_card_for_checklist()
+    r = client.post(f"/api/cards/{card_id}/checklist", json={"text": "   "})
+    assert r.status_code == 422
+
+
+def test_check_checklist_item() -> None:
+    card_id = _create_card_for_checklist()
+    item = client.post(f"/api/cards/{card_id}/checklist", json={"text": "Todo"}).json()
+    r = client.patch(f"/api/checklist/{item['id']}", json={"is_checked": True})
+    assert r.status_code == 200
+    assert r.json()["is_checked"] is True
+
+
+def test_uncheck_checklist_item() -> None:
+    card_id = _create_card_for_checklist()
+    item = client.post(f"/api/cards/{card_id}/checklist", json={"text": "Done"}).json()
+    client.patch(f"/api/checklist/{item['id']}", json={"is_checked": True})
+    r = client.patch(f"/api/checklist/{item['id']}", json={"is_checked": False})
+    assert r.json()["is_checked"] is False
+
+
+def test_update_checklist_item_text() -> None:
+    card_id = _create_card_for_checklist()
+    item = client.post(f"/api/cards/{card_id}/checklist", json={"text": "Old text"}).json()
+    r = client.patch(f"/api/checklist/{item['id']}", json={"text": "New text"})
+    assert r.json()["text"] == "New text"
+
+
+def test_delete_checklist_item() -> None:
+    card_id = _create_card_for_checklist()
+    item = client.post(f"/api/cards/{card_id}/checklist", json={"text": "To remove"}).json()
+    r = client.delete(f"/api/checklist/{item['id']}")
+    assert r.status_code == 204
+    remaining = client.get(f"/api/cards/{card_id}/checklist").json()
+    assert not any(i["id"] == item["id"] for i in remaining)
+
+
+def test_checklist_items_deleted_with_card() -> None:
+    card_id = _create_card_for_checklist()
+    client.post(f"/api/cards/{card_id}/checklist", json={"text": "Should vanish"})
+    client.delete(f"/api/cards/{card_id}")
+    login_demo_user()
+    r = client.get(f"/api/cards/{card_id}/checklist")
+    assert r.status_code == 404
+
+
+def test_board_cards_include_checklist_counts() -> None:
+    login_demo_user()
+    board = client.get("/api/board").json()
+    col_id = board["columns"][0]["id"]
+    card_id = client.post("/api/cards", json={"column_id": col_id, "title": "Progress card"}).json()["id"]
+
+    client.post(f"/api/cards/{card_id}/checklist", json={"text": "Task A"})
+    item = client.post(f"/api/cards/{card_id}/checklist", json={"text": "Task B"}).json()
+    client.patch(f"/api/checklist/{item['id']}", json={"is_checked": True})
+
+    board_detail = client.get("/api/board").json()
+    card = next((c for c in board_detail["cards"] if c["id"] == card_id), None)
+    assert card is not None
+    assert card["checklist_total"] == 2
+    assert card["checklist_done"] == 1
+
+
+def test_checklist_requires_auth() -> None:
+    client.post("/api/logout")
+    r = client.get("/api/cards/1/checklist")
+    assert r.status_code == 401
+
+
+def test_checklist_cross_user_rejected() -> None:
+    card_id = _create_card_for_checklist()
+    item = client.post(f"/api/cards/{card_id}/checklist", json={"text": "Mine"}).json()
+
+    login_as("checklist_other_user")
+    r = client.patch(f"/api/checklist/{item['id']}", json={"is_checked": True})
+    assert r.status_code == 404

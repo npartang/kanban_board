@@ -44,6 +44,8 @@ const makeCard = (id: string, title: string, priority: Card["priority"], dueDate
   dueDate,
   details: "",
   labels: [],
+  checklistTotal: 0,
+  checklistDone: 0,
 });
 
 const cards: Card[] = [

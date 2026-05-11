@@ -49,6 +49,8 @@ class CardOut(BaseModel):
     due_date: str | None = None
     labels: List[str] = []
     position: int
+    checklist_total: int = 0
+    checklist_done: int = 0
 
 
 class BoardOut(BaseModel):
@@ -111,6 +113,23 @@ class CreateCommentRequest(BaseModel):
     body: str
 
 
+class ChecklistItemOut(BaseModel):
+    id: int
+    card_id: int
+    text: str
+    is_checked: bool
+    position: int
+
+
+class CreateChecklistItemRequest(BaseModel):
+    text: str
+
+
+class UpdateChecklistItemRequest(BaseModel):
+    text: str | None = None
+    is_checked: bool | None = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -133,10 +152,14 @@ def _load_board(connection, board_id: int, seed: bool = False) -> BoardOut:
 
     card_rows = connection.execute(
         """
-        SELECT id, column_id, title, details, priority, due_date, labels, position
+        SELECT
+            cards.id, cards.column_id, cards.title, cards.details,
+            cards.priority, cards.due_date, cards.labels, cards.position,
+            (SELECT COUNT(*) FROM card_checklist_items WHERE card_id = cards.id) AS checklist_total,
+            (SELECT COUNT(*) FROM card_checklist_items WHERE card_id = cards.id AND is_checked = 1) AS checklist_done
         FROM cards
-        WHERE column_id IN (SELECT id FROM columns WHERE board_id = ?)
-        ORDER BY column_id ASC, position ASC;
+        WHERE cards.column_id IN (SELECT id FROM columns WHERE board_id = ?)
+        ORDER BY cards.column_id ASC, cards.position ASC;
         """,
         (board_id,),
     ).fetchall()
@@ -158,6 +181,8 @@ def _load_board(connection, board_id: int, seed: bool = False) -> BoardOut:
                 due_date=r["due_date"],
                 labels=_parse_labels(r["labels"]),
                 position=r["position"],
+                checklist_total=r["checklist_total"] or 0,
+                checklist_done=r["checklist_done"] or 0,
             )
             for r in card_rows
         ],
@@ -496,6 +521,117 @@ def delete_comment(
         if row is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
         connection.execute("DELETE FROM card_comments WHERE id = ?;", (comment_id,))
+        connection.commit()
+
+
+# ---------------------------------------------------------------------------
+# Checklist routes
+# ---------------------------------------------------------------------------
+
+@router.get("/api/cards/{card_id}/checklist", response_model=List[ChecklistItemOut])
+def list_checklist(
+    card_id: int,
+    user_id: int = Depends(get_current_user_id),
+) -> List[ChecklistItemOut]:
+    with db_connection() as connection:
+        _verify_card_ownership(connection, card_id, user_id)
+        rows = connection.execute(
+            "SELECT id, card_id, text, is_checked, position FROM card_checklist_items WHERE card_id = ? ORDER BY position ASC;",
+            (card_id,),
+        ).fetchall()
+    return [
+        ChecklistItemOut(id=r["id"], card_id=r["card_id"], text=r["text"], is_checked=bool(r["is_checked"]), position=r["position"])
+        for r in rows
+    ]
+
+
+@router.post("/api/cards/{card_id}/checklist", response_model=ChecklistItemOut, status_code=status.HTTP_201_CREATED)
+def add_checklist_item(
+    card_id: int,
+    payload: CreateChecklistItemRequest,
+    user_id: int = Depends(get_current_user_id),
+) -> ChecklistItemOut:
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Checklist item text cannot be empty")
+    with db_connection() as connection:
+        _verify_card_ownership(connection, card_id, user_id)
+        next_pos_row = connection.execute(
+            "SELECT COALESCE(MAX(position) + 1, 0) AS next_pos FROM card_checklist_items WHERE card_id = ?;",
+            (card_id,),
+        ).fetchone()
+        next_pos = int(next_pos_row["next_pos"])
+        cursor = connection.execute(
+            "INSERT INTO card_checklist_items (card_id, text, position) VALUES (?, ?, ?);",
+            (card_id, text, next_pos),
+        )
+        item_id = int(cursor.lastrowid)
+        connection.commit()
+        row = connection.execute(
+            "SELECT id, card_id, text, is_checked, position FROM card_checklist_items WHERE id = ?;",
+            (item_id,),
+        ).fetchone()
+    return ChecklistItemOut(id=row["id"], card_id=row["card_id"], text=row["text"], is_checked=bool(row["is_checked"]), position=row["position"])
+
+
+@router.patch("/api/checklist/{item_id}", response_model=ChecklistItemOut)
+def update_checklist_item(
+    item_id: int,
+    payload: UpdateChecklistItemRequest,
+    user_id: int = Depends(get_current_user_id),
+) -> ChecklistItemOut:
+    with db_connection() as connection:
+        ownership = connection.execute(
+            """
+            SELECT ci.id FROM card_checklist_items ci
+            JOIN cards ON ci.card_id = cards.id
+            JOIN columns ON cards.column_id = columns.id
+            JOIN boards ON columns.board_id = boards.id
+            WHERE ci.id = ? AND boards.user_id = ?;
+            """,
+            (item_id, user_id),
+        ).fetchone()
+        if ownership is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checklist item not found")
+
+        if payload.text is not None:
+            connection.execute(
+                "UPDATE card_checklist_items SET text = ? WHERE id = ?;",
+                (payload.text.strip(), item_id),
+            )
+        if payload.is_checked is not None:
+            connection.execute(
+                "UPDATE card_checklist_items SET is_checked = ? WHERE id = ?;",
+                (1 if payload.is_checked else 0, item_id),
+            )
+        connection.commit()
+
+        row = connection.execute(
+            "SELECT id, card_id, text, is_checked, position FROM card_checklist_items WHERE id = ?;",
+            (item_id,),
+        ).fetchone()
+    return ChecklistItemOut(id=row["id"], card_id=row["card_id"], text=row["text"], is_checked=bool(row["is_checked"]), position=row["position"])
+
+
+@router.delete("/api/checklist/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_checklist_item(
+    item_id: int,
+    user_id: int = Depends(get_current_user_id),
+) -> None:
+    with db_connection() as connection:
+        ownership = connection.execute(
+            """
+            SELECT ci.id FROM card_checklist_items ci
+            JOIN cards ON ci.card_id = cards.id
+            JOIN columns ON cards.column_id = columns.id
+            JOIN boards ON columns.board_id = boards.id
+            WHERE ci.id = ? AND boards.user_id = ?;
+            """,
+            (item_id, user_id),
+        ).fetchone()
+        if ownership is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checklist item not found")
+        connection.execute("DELETE FROM card_checklist_items WHERE id = ?;", (item_id,))
         connection.commit()
 
 

@@ -1,6 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-const loginAsDemo = async (page: Parameters<typeof test>[1] extends (page: infer P) => unknown ? P : never) => {
+const loginAsDemo = async (page: Page) => {
   await page.goto("/");
   await page.getByLabel("Username").fill("user");
   await page.getByLabel("Password").fill("password");
@@ -51,7 +51,7 @@ test("opens the card detail modal when Edit is clicked", async ({ page }) => {
   await card.getByRole("button", { name: /edit/i }).click();
 
   await expect(page.getByRole("dialog", { name: /card details/i })).toBeVisible();
-  await expect(page.getByDisplayValue("Modal test card")).toBeVisible();
+  await expect(page.locator('input[value="Modal test card"]')).toBeVisible();
 });
 
 test("closes card detail modal with Escape", async ({ page }) => {
@@ -92,7 +92,7 @@ test("renames a column", async ({ page }) => {
   const titleInput = firstColumn.getByLabel("Column title");
   await titleInput.fill("Renamed Col");
   await titleInput.press("Tab");
-  await expect(firstColumn.getByDisplayValue("Renamed Col")).toBeVisible();
+  await expect(firstColumn.locator('input[value="Renamed Col"]')).toBeVisible();
 });
 
 // ---- Boards ----------------------------------------------------------------

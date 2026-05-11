@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
-import type { Card, CardComment, Column, Priority } from "@/lib/kanban";
+import type { Card, CardComment, ChecklistItem, Column, Priority } from "@/lib/kanban";
 
 export type CardUpdates = {
   title?: string;
@@ -22,6 +22,10 @@ type CardDetailModalProps = {
   comments?: CardComment[];
   onAddComment?: (body: string) => Promise<CardComment>;
   onDeleteComment?: (id: number) => void;
+  checklist?: ChecklistItem[];
+  onAddChecklistItem?: (text: string) => Promise<ChecklistItem>;
+  onToggleChecklistItem?: (id: number, isChecked: boolean) => void;
+  onDeleteChecklistItem?: (id: number) => void;
 };
 
 const PRIORITY_LABELS: Record<Priority, string> = {
@@ -51,6 +55,10 @@ export const CardDetailModal = ({
   comments = [],
   onAddComment,
   onDeleteComment,
+  checklist = [],
+  onAddChecklistItem,
+  onToggleChecklistItem,
+  onDeleteChecklistItem,
 }: CardDetailModalProps) => {
   const [title, setTitle] = useState(card.title);
   const [details, setDetails] = useState(card.details === "No details yet." ? "" : card.details);
@@ -64,6 +72,8 @@ export const CardDetailModal = ({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [commentBody, setCommentBody] = useState("");
   const [isAddingComment, setIsAddingComment] = useState(false);
+  const [checklistInput, setChecklistInput] = useState("");
+  const [isAddingChecklistItem, setIsAddingChecklistItem] = useState(false);
 
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -290,6 +300,96 @@ export const CardDetailModal = ({
 
             {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
           </div>
+
+          {/* Checklist */}
+          {onAddChecklistItem && (
+            <div className="border-t border-[var(--stroke)] px-6 py-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--gray-text)]">
+                  Checklist
+                  {checklist.length > 0 && (
+                    <span className="ml-2 font-normal normal-case tracking-normal">
+                      ({checklist.filter((i) => i.isChecked).length}/{checklist.length})
+                    </span>
+                  )}
+                </p>
+              </div>
+              {checklist.length > 0 && (
+                <>
+                  <div
+                    className="h-1.5 w-full rounded-full bg-[var(--stroke)]"
+                    role="progressbar"
+                    aria-valuenow={checklist.filter((i) => i.isChecked).length}
+                    aria-valuemax={checklist.length}
+                    aria-label="Checklist progress"
+                  >
+                    <div
+                      className="h-1.5 rounded-full bg-[var(--primary-blue)] transition-all"
+                      style={{ width: `${(checklist.filter((i) => i.isChecked).length / checklist.length) * 100}%` }}
+                    />
+                  </div>
+                  <ul className="space-y-1.5" aria-label="Checklist items">
+                    {checklist.map((item) => (
+                      <li key={item.id} className="group flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={item.isChecked}
+                          onChange={(e) => onToggleChecklistItem?.(item.id, e.target.checked)}
+                          className="h-3.5 w-3.5 flex-shrink-0 accent-[var(--primary-blue)]"
+                          aria-label={item.text}
+                        />
+                        <span className={`flex-1 text-sm ${item.isChecked ? "line-through text-[var(--gray-text)]" : "text-[var(--navy-dark)]"}`}>
+                          {item.text}
+                        </span>
+                        {onDeleteChecklistItem && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteChecklistItem(item.id)}
+                            className="shrink-0 text-[var(--gray-text)] opacity-0 group-hover:opacity-100 hover:text-red-500 transition"
+                            aria-label={`Delete checklist item ${item.text}`}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={checklistInput}
+                  onChange={(e) => setChecklistInput(e.target.value)}
+                  onKeyDown={async (e) => {
+                    if (e.key === "Enter" && checklistInput.trim()) {
+                      e.preventDefault();
+                      setIsAddingChecklistItem(true);
+                      try { await onAddChecklistItem(checklistInput.trim()); setChecklistInput(""); }
+                      finally { setIsAddingChecklistItem(false); }
+                    }
+                  }}
+                  placeholder="Add checklist item…"
+                  className="flex-1 rounded-xl border border-[var(--stroke)] bg-white px-3 py-1.5 text-sm text-[var(--navy-dark)] outline-none transition focus:border-[var(--primary-blue)]"
+                  aria-label="New checklist item"
+                />
+                <button
+                  type="button"
+                  aria-label="Add checklist item"
+                  disabled={!checklistInput.trim() || isAddingChecklistItem}
+                  onClick={async () => {
+                    if (!checklistInput.trim()) return;
+                    setIsAddingChecklistItem(true);
+                    try { await onAddChecklistItem(checklistInput.trim()); setChecklistInput(""); }
+                    finally { setIsAddingChecklistItem(false); }
+                  }}
+                  className="rounded-xl border border-[var(--stroke)] px-3 py-1.5 text-xs font-semibold text-[var(--gray-text)] hover:border-[var(--primary-blue)] disabled:opacity-40"
+                >
+                  {isAddingChecklistItem ? "…" : "Add"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Comments */}
           {onAddComment && (

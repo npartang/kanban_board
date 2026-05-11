@@ -25,6 +25,8 @@ const mockCard: Card = {
   priority: "high",
   dueDate: "2026-12-31",
   labels: ["Auth", "Backend"],
+  checklistTotal: 0,
+  checklistDone: 0,
 };
 
 const defaultProps = {
